@@ -57,6 +57,9 @@ class ToolError(LayaMCPError):
         if cause is not None:
             full = f"{full}: {cause}"
         super().__init__(full)
+        # Chain explicitly so callers that construct ToolError(cause=...) without
+        # `raise ... from` still get the original in tracebacks.
+        self.__cause__ = cause
 
 
 # ---------------------------------------------------------------------------

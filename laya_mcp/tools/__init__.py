@@ -20,6 +20,8 @@ from .route import RouteTool
 from .secret_risk import SecretRiskTool
 from .test_priority import TestPriorityTool
 from .triage import TriageTool
+from .update import UpdateTool
+from .usage_report import UsageTool
 
 # Tools backed by upstream Laya presets.
 _PRESET_TOOLS: list[Tool] = [
@@ -40,6 +42,12 @@ _CUSTOM_TOOLS: list[Tool] = [
     DiffIntentTool(),
 ]
 
-TOOLS: list[Tool] = _PRESET_TOOLS + _CUSTOM_TOOLS
+# Maintenance tools (no model inference).
+_ADMIN_TOOLS: list[Tool] = [
+    UpdateTool(),
+    UsageTool(),
+]
+
+TOOLS: list[Tool] = _PRESET_TOOLS + _CUSTOM_TOOLS + _ADMIN_TOOLS
 
 __all__ = ["TOOLS", "Tool"]

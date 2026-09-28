@@ -10,6 +10,16 @@ All settings are env-overridable via the `LAYAMCP_` prefix. Defaults are defined
 | `port`                     | `LAYAMCP_PORT`                | `8765`        | HTTP port. Avoid conflicts with common services (5432 Postgres, 6379 Redis, 8080 alt-http). |
 | `preload_models`           | `LAYAMCP_PRELOAD_MODELS`      | `true`        | Load model weights at startup. `false` defers to first call (slower first request).         |
 | `log_level`                | `LAYAMCP_LOG_LEVEL`           | `INFO`        | Python logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                 |
+| `data_dir`                 | `LAYAMCP_DATA_DIR`            | `<project>/data` | Where the usage database (`usage.db`) and exports (`exports/`) live. Gitignored.        |
+| `usage_enabled`            | `LAYAMCP_USAGE_ENABLED`       | `true`        | Log every prediction + MCP session to SQLite (for training data). `false` disables it.      |
+| `usage_store_text`         | `LAYAMCP_USAGE_STORE_TEXT`    | `false`       | Also store the raw input text. Off by default: inputs can contain prompts, code and secrets. Never applied to `laya_secret_risk`. |
+| `allow_updates`            | `LAYAMCP_ALLOW_UPDATES`       | `false`       | Lets `laya_update` `apply` run `pip install -U laya` and re-download models. The server has no auth, so keep it off unless you need it. |
+
+## Model location
+
+Model weights are stored in `<project>/models` (gitignored). `laya_mcp/__init__.py` sets `HF_HUB_CACHE` to that folder before Hugging Face is imported, unless you already set `HF_HUB_CACHE` or `HF_HOME` yourself (then yours wins). This is not a `LAYAMCP_*` setting because it has to take effect before any imports.
+
+Set `HF_HUB_OFFLINE=1` to guarantee the server never reaches the network once the models are downloaded (note that `laya_update` then can't check for updates).
 
 ## `.env` file
 

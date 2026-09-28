@@ -2,23 +2,39 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from laya.common import build_sequence, render_options
 
 from ..bridge import LayaBridge
-from ._helpers import confidence_of, extract_decision, require_dict
+from ._helpers import choice_of, require_dict
 from .base import Tool
 
+_STATE_KEY = "report"
 
-_BUG_QUESTIONS = build_sequence(
-    render_options(
-        ["S0_critical", "S1_high", "S2_medium", "S3_low"],
-        key="severity",
-    ),
-    render_options(
-        ["frontend", "backend", "infra", "docs", "tests", "deps", "auth", "unknown"],
-        key="area",
-    ),
-)
+_BUG_QUESTIONS = {
+    "severity": {
+        "type": "choice",
+        "instructions": "How severe is the bug described in `report`?",
+        "criteria": {
+            "S0_critical": "outage, data loss, security hole or everyone is blocked",
+            "S1_high": "a major feature is broken for many users, no good workaround",
+            "S2_medium": "a feature misbehaves for some users, workaround exists",
+            "S3_low": "cosmetic issue or typo, easy workaround",
+        },
+    },
+    "area": {
+        "type": "choice",
+        "instructions": "Which part of the system does the bug in `report` belong to?",
+        "criteria": {
+            "frontend": "UI, browser, styling, client-side code",
+            "backend": "server logic, APIs, databases, business rules",
+            "infra": "deployment, CI/CD, networking, hosting, performance at scale",
+            "docs": "documentation, README, comments, typos in text",
+            "tests": "test suite, flaky tests, test tooling",
+            "deps": "third-party dependencies, version conflicts, packaging",
+            "auth": "login, permissions, sessions, tokens, access control",
+            "unknown": "cannot tell from the report",
+        },
+    },
+}
 
 
 class BugSeverityInput(BaseModel):
@@ -42,13 +58,13 @@ class BugSeverityTool(Tool):
     output_schema = BugSeverityOutput
 
     async def run(self, bridge: LayaBridge, text: str) -> BugSeverityOutput:
-        raw = bridge.predict_custom(text, questions=_BUG_QUESTIONS)
+        raw = bridge.predict_custom(text, questions=_BUG_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
-        severity_entry = extract_decision(raw, "severity", self.name)
-        area_entry = extract_decision(raw, "area", self.name)
+        severity, confidence = choice_of(raw, "severity", self.name)
+        area, _ = choice_of(raw, "area", self.name)
         return BugSeverityOutput(
-            severity=str(severity_entry["label"]),
-            area=str(area_entry["label"]),
-            confidence=confidence_of(severity_entry),
+            severity=severity,
+            area=area,
+            confidence=confidence,
             details=raw,
         )

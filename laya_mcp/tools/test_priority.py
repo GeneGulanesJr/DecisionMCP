@@ -2,30 +2,38 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from laya.common import build_sequence, render_options
 
 from ..bridge import LayaBridge
-from ._helpers import confidence_of, extract_decision, require_dict
+from ._helpers import choice_of, require_dict
 from .base import Tool
 
+_STATE_KEY = "test"
 
-_TEST_QUESTIONS = build_sequence(
-    render_options(
-        ["skip", "low", "medium", "high", "critical"],
-        key="priority",
-    ),
-    render_options(
-        [
-            "covers_new_code",
-            "covers_bug_fix",
-            "covers_regression",
-            "smoke_test",
-            "redundant",
-            "flaky",
-        ],
-        key="reason",
-    ),
-)
+_TEST_QUESTIONS = {
+    "priority": {
+        "type": "choice",
+        "instructions": "How early should the test described in `test` run in a CI pipeline?",
+        "criteria": {
+            "skip": "redundant or obsolete, not worth running",
+            "low": "rarely useful, run last",
+            "medium": "normal coverage",
+            "high": "covers important or recently changed behaviour",
+            "critical": "guards a security fix, a regression or core functionality, run first",
+        },
+    },
+    "reason": {
+        "type": "choice",
+        "instructions": "Why does the test described in `test` have this priority?",
+        "criteria": {
+            "covers_new_code": "exercises newly added code",
+            "covers_bug_fix": "verifies a recent bug or security fix",
+            "covers_regression": "guards against a previously seen regression",
+            "smoke_test": "quick sanity check of core functionality",
+            "redundant": "duplicates another test",
+            "flaky": "is unreliable or intermittently failing",
+        },
+    },
+}
 
 
 class TestPriorityInput(BaseModel):
@@ -53,13 +61,13 @@ class TestPriorityTool(Tool):
     output_schema = TestPriorityOutput
 
     async def run(self, bridge: LayaBridge, description: str) -> TestPriorityOutput:
-        raw = bridge.predict_custom(description, questions=_TEST_QUESTIONS)
+        raw = bridge.predict_custom(description, questions=_TEST_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
-        priority_entry = extract_decision(raw, "priority", self.name)
-        reason_entry = extract_decision(raw, "reason", self.name)
+        priority, confidence = choice_of(raw, "priority", self.name)
+        reason, _ = choice_of(raw, "reason", self.name)
         return TestPriorityOutput(
-            priority=str(priority_entry["label"]),
-            reason=str(reason_entry["label"]),
-            confidence=confidence_of(priority_entry),
+            priority=priority,
+            reason=reason,
+            confidence=confidence,
             details=raw,
         )

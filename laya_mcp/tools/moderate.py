@@ -4,7 +4,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ..bridge import LayaBridge
-from ._helpers import extract_decision, label_is, max_confidence, require_dict
+from ._helpers import require_dict, yes_prob
 from .base import Tool
 
 
@@ -29,13 +29,13 @@ class ModerateTool(Tool):
     async def run(self, bridge: LayaBridge, text: str) -> ModerateOutput:
         raw = bridge.predict(text, preset="moderate")
         require_dict(raw, self.name)
-        toxicity = extract_decision(raw, "toxicity", self.name)
-        harassment = extract_decision(raw, "harassment", self.name)
-        threat = extract_decision(raw, "threat", self.name)
+        probs = [yes_prob(raw, k, self.name) for k in ("toxic", "harassment", "threat")]
+        toxic, harassment, threat = (p >= 0.5 for p in probs)
         return ModerateOutput(
-            is_toxic=label_is(toxicity, "toxic"),
-            is_harassment=label_is(harassment, "harassment"),
-            is_threat=label_is(threat, "threat"),
-            confidence=max_confidence(raw),
+            is_toxic=toxic,
+            is_harassment=harassment,
+            is_threat=threat,
+            # Weakest of the three verdicts: all three are at least this sure.
+            confidence=min(max(p, 1.0 - p) for p in probs),
             details=raw,
         )

@@ -4,7 +4,7 @@ If you're an AI coding agent (Aider, Cursor, Claude Code, Pi, etc.) working in t
 
 ## What this project is
 
-**LayaMCP** is an HTTP MCP server that wraps the [Laya](https://github.com/NandhaKishorM/laya) decision engine for use with Pi (and any other MCP client). It exposes **11 tools** over HTTP at `http://127.0.0.1:8765` by default — 5 upstream-preset + 6 coding-specific.
+**LayaMCP** is an HTTP MCP server (SSE transport, endpoint `/sse`) that wraps the [Laya](https://github.com/NandhaKishorM/laya) decision engine for use with Pi (and any other MCP client). It exposes **13 tools** at `http://127.0.0.1:8765` by default — 5 upstream-preset + 6 coding-specific + 2 maintenance. Model weights live in `./models` (gitignored); usage logs in `./data` (gitignored).
 
 | Tool | Purpose | Source |
 |---|---|---|
@@ -19,6 +19,8 @@ If you're an AI coding agent (Aider, Cursor, Claude Code, Pi, etc.) working in t
 | `laya_test_priority` | Test run priority + reason | custom questions |
 | `laya_secret_risk` | Detect leaked credentials in text | custom questions |
 | `laya_diff_intent` | PR diff intent / scope / risk | custom questions |
+| `laya_update` | Check/apply Laya library + model updates, list new models | maintenance (no inference) |
+| `laya_usage` | Usage/session stats and JSONL export for training | maintenance (no inference) |
 
 Models run in-process via `laya.Router` (~33 ms per call on T4). The plugin architecture means adding a tool is a 1-file change.
 
@@ -34,6 +36,7 @@ LAYAMCP_PORT=9000 layamcp              # override
 
 # Run tests (uses MagicMock bridges — no GPU needed, fast)
 pytest                                  # all tests
+LAYAMCP_INTEGRATION=1 pytest tests/test_integration.py   # real models in ./models
 pytest tests/test_tools.py              # specific file
 pytest -k guard                         # specific test pattern
 pytest -v                               # verbose
@@ -61,7 +64,7 @@ python -c "from laya_mcp.bridge import LayaBridge; b = LayaBridge(preload=True);
 - Type hints **everywhere**. `from __future__ import annotations` at the top of every file.
 - **Pydantic v2** for schemas (`BaseModel.model_json_schema()`, not `schema()`).
 - **Async tools** — `async def run(...)`.
-- **Raise on bad data, don't return defaults.** Silent false negatives are worse than errors. Use the helpers in `laya_mcp/tools/_helpers.py` (`require_dict`, `extract_decision`) — they raise `ToolError` on any malformed Laya output.
+- **Raise on bad data, don't return defaults.** Silent false negatives are worse than errors. Use the helpers in `laya_mcp/tools/_helpers.py` (`require_dict`, `choice_of`, `yes_prob`, `score_level`, `bin_mass`) — they raise `ToolError` on any malformed Laya output.
 - **Use the custom exception hierarchy.** Catch `LayaMCPError` at the boundary (server). Use `BridgeError` / `UnknownPresetError` for upstream issues, `ToolError` for parsing issues.
 - **Log context, not data.** When logging errors, include the preset name and input length, not the raw input — to avoid leaking user prompts into log files.
 - Tools in `laya_mcp/tools/` are **pure plugins**: subclass `Tool`, define class attributes, register in `__init__.py`. No other files need to change.
@@ -74,7 +77,10 @@ python -c "from laya_mcp.bridge import LayaBridge; b = LayaBridge(preload=True);
 3. **`Tool.run()` is async.** Don't make it sync — it would block the FastAPI event loop.
 4. **The registry in `laya_mcp/tools/__init__.py` is the only file to edit when adding/removing a tool.** Don't add tool imports to `server.py` — the server reads from the registry.
 5. **The server is the only place that catches `LayaMCPError` and converts to MCP error blocks.** Tools raise; server decides how to surface. Don't add try/except in `run()` unless you have a specific reason.
-6. **Tool parsers validate strictly.** No silent defaults on missing keys / wrong types — use `extract_decision` / `require_dict` from `laya_mcp/tools/_helpers.py`.
+6. **Tool parsers validate strictly.** No silent defaults on missing keys / wrong types — use the helpers in `laya_mcp/tools/_helpers.py`.
+7. **Laya answers are typed.** `Router.predict` returns `{"answers": {q: {"type": "choice"|"noul"|"score", ...}}}` — not `{"q1": {"label", "confidence"}}`. The input text must be passed as `{field: text}` where `field` is the name the question instructions use (the bridge does this).
+8. **Input text is never logged or stored by default.** The usage store (`laya_mcp/usage.py`) keeps text only when `LAYAMCP_USAGE_STORE_TEXT=true`, and never for `laya_secret_risk`. Don't weaken this.
+9. **`laya_update` `apply` stays opt-in** (`LAYAMCP_ALLOW_UPDATES`): it runs pip and the HTTP server has no auth. It may only ever install `laya`.
 
 ## Common tasks
 
@@ -109,9 +115,12 @@ class MyTool(Tool):
 
     async def run(self, bridge: LayaBridge, text: str) -> MyOutput:
         raw = bridge.predict(text, preset="<preset_name>")
-        as_dict = raw if isinstance(raw, dict) else {}
-        return MyOutput(label=str(as_dict.get("q1", {}).get("label", "")), confidence=...)
+        require_dict(raw, self.name)
+        label, confidence = choice_of(raw, "<question_name>", self.name)
+        return MyOutput(label=label, confidence=confidence)
 ```
+
+(add `from ._helpers import choice_of, require_dict` at the top)
 
 **2.** Register in `laya_mcp/tools/__init__.py`:
 
@@ -134,7 +143,7 @@ TOOLS: list[Tool] = [
 @pytest.mark.asyncio
 async def test_mytool_happy_path() -> None:
     bridge = MagicMock()
-    bridge.predict.return_value = {"q1": {"label": "spam", "confidence": 0.9}}
+    bridge.predict.return_value = result(q=choice("spam", 0.9))  # from tests/laya_fixtures.py
     out = await MyTool().run(bridge, text="...")
     assert out.label == "spam"
 ```
@@ -143,19 +152,23 @@ async def test_mytool_happy_path() -> None:
 
 ### Add a custom preset (not from upstream)
 
-```python
-from laya.common import build_sequence, render_options
+Questions are plain dicts (`type` is `choice`, `noul` or `score`); refer to the input by its field name in backticks. Prefer `choice` over `score` for ordinal scales — it answered better on custom questions (see `docs/TOOLS.md`).
 
-MY_QUESTIONS = build_sequence(
-    render_options(["yes", "no"], key="answer"),
-    render_options(["low", "medium", "high"], key="priority"),
-)
+```python
+MY_QUESTIONS = {
+    "answer": {"type": "noul", "instructions": "Is `text` a question?"},
+    "priority": {
+        "type": "choice",
+        "instructions": "How urgent is `text`?",
+        "criteria": {"low": "can wait", "medium": "this week", "high": "now"},
+    },
+}
 ```
 
 In the tool's `run()`:
 
 ```python
-raw = bridge.predict_custom(text, questions=MY_QUESTIONS)
+raw = bridge.predict_custom(text, questions=MY_QUESTIONS, state_key="text")
 ```
 
 ### Debug a tool's parsing against real Laya
@@ -176,7 +189,8 @@ Use the actual shape to update the parser in the tool file.
 - ❌ Don't load multiple `LayaBridge` instances in one process.
 - ❌ Don't make `Tool.run()` synchronous.
 - ❌ Don't edit `laya_mcp/tools/base.py` to add a tool — subclass it.
-- ❌ Don't trust Laya's return shape — always validate via `require_dict` / `extract_decision`.
+- ❌ Don't trust Laya's return shape — always validate via the `_helpers.py` functions.
+- ❌ Don't store raw input text in the usage log unless `LAYAMCP_USAGE_STORE_TEXT` is on.
 - ❌ Don't hardcode ports / hosts — use `LAYAMCP_*` env vars via `Settings`.
 - ❌ Don't add tool imports to `server.py` — register in `laya_mcp/tools/__init__.py`.
 - ❌ Don't return defaults on parse failures — raise `ToolError`. Silent failures hide false negatives.
