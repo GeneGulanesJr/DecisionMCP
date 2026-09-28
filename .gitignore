@@ -12,6 +12,12 @@ __pycache__/
 venv/
 env/
 
+# Downloaded model weights (~2 GB)
+models/
+
+# Usage log + training exports
+data/
+
 # Build / dist
 dist/
 build/

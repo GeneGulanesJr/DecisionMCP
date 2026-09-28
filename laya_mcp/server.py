@@ -29,18 +29,23 @@ Three error categories are handled distinctly:
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
+from mcp import types
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from pydantic import ValidationError
+from starlette.responses import Response
+from starlette.routing import Mount
 
 from .bridge import LayaBridge
 from .config import settings
 from .errors import LayaMCPError
 from .tools import TOOLS
+from .usage import UsageStore, current_session, current_tool
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +53,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Single bridge instance — model loaded once per process.
 # ---------------------------------------------------------------------------
-bridge = LayaBridge(preload=settings.preload_models)
+usage_store = (
+    UsageStore(settings.data_dir / "usage.db", store_text=settings.usage_store_text)
+    if settings.usage_enabled
+    else None
+)
+bridge = LayaBridge(preload=settings.preload_models, usage=usage_store)
 
 
 # ---------------------------------------------------------------------------
@@ -58,37 +68,38 @@ server: Server = Server("layamcp")
 
 
 @server.list_tools()
-async def _list_tools():
+async def _list_tools() -> list[types.Tool]:
     """Return all registered tools to MCP clients."""
-    return [t.to_mcp_schema() for t in TOOLS]
+    return [types.Tool(**t.to_mcp_schema()) for t in TOOLS]
 
 
 @server.call_tool()
-async def _call_tool(name: str, arguments: dict) -> list[dict]:
+async def _call_tool(name: str, arguments: dict) -> types.CallToolResult:
     """Dispatch an MCP tool call with full error handling.
 
-    Errors are returned as MCP content blocks (not raised) so the
+    Errors are returned as ``CallToolResult(isError=True)`` (not raised) so the
     server stays alive and clients get a structured error to react to.
     """
     tool = next((t for t in TOOLS if t.name == name), None)
     if tool is None:
         available = [t.name for t in TOOLS]
         logger.warning("Unknown tool requested: %r (available: %s)", name, available)
-        return [_error_block(f"Unknown tool {name!r}. Available: {available}")]
+        return _error_result(f"Unknown tool {name!r}. Available: {available}")
 
     # Validate inputs against the tool's Pydantic schema.
     try:
         validated = tool.input_schema(**arguments)
     except ValidationError as e:
         logger.warning("Tool %s got invalid input: %s", name, e)
-        return [_error_block(f"Invalid input for {name}: {e}")]
+        return _error_result(f"Invalid input for {name}: {e}")
 
     # Run the tool. Any LayaMCPError is logged with traceback + returned
     # as MCP error block. Any other exception is treated as a bug —
     # logged with full traceback but a generic message returned.
+    current_tool.set(name)  # lets the bridge attribute predictions to this tool
     try:
         result = await tool.run(bridge, **validated.model_dump())
-        return [_result_block(result)]
+        return _result(result)
     except LayaMCPError as e:
         logger.error(
             "Tool %s failed (input_keys=%s): %s",
@@ -97,10 +108,10 @@ async def _call_tool(name: str, arguments: dict) -> list[dict]:
             e,
             exc_info=True,
         )
-        return [_error_block(str(e))]
+        return _error_result(str(e))
     except Exception:
         logger.exception("Unexpected error in tool %s", name)
-        return [_error_block(f"Internal error in {name}. Check server logs.")]
+        return _error_result(f"Internal error in {name}. Check server logs.")
 
 
 # ---------------------------------------------------------------------------
@@ -108,18 +119,20 @@ async def _call_tool(name: str, arguments: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _result_block(result: Any) -> dict:
-    """Format a successful Pydantic result as an MCP text content block."""
+def _result(result: Any) -> types.CallToolResult:
+    """Format a successful Pydantic result as a JSON text ``CallToolResult``."""
     if hasattr(result, "model_dump_json"):
         text = result.model_dump_json()
     else:
         text = str(result)
-    return {"type": "text", "text": text}
+    return types.CallToolResult(content=[types.TextContent(type="text", text=text)])
 
 
-def _error_block(message: str) -> dict:
-    """Format an error message as an MCP text content block with ``isError``."""
-    return {"type": "text", "text": message, "isError": True}
+def _error_result(message: str) -> types.CallToolResult:
+    """Format an error message as a ``CallToolResult`` with ``isError=True``."""
+    return types.CallToolResult(
+        content=[types.TextContent(type="text", text=message)], isError=True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -146,20 +159,36 @@ async def health() -> dict[str, Any]:
 
 
 @app.get("/sse")
-async def sse_endpoint(request: Request) -> None:
-    """MCP SSE endpoint. Clients open this for the event stream."""
-    async with sse.connect_sse(
-        request.scope, request.receive, request._send
-    ) as (read_stream, write_stream):
-        await server.run(
-            read_stream, write_stream, server.create_initialization_options()
-        )
+async def sse_endpoint(request: Request) -> Response:
+    """MCP SSE endpoint. Clients open this for the event stream.
+
+    Each connection is one usage-log session; the id is set in a context var
+    before ``server.run`` so request handlers spawned by it inherit it.
+
+    The SSE transport writes the HTTP response itself, so this returns an
+    empty ``Response`` at disconnect purely so FastAPI has nothing left to send
+    (returning ``None`` makes it try, and uvicorn rejects the second response).
+    """
+    session_id = uuid.uuid4().hex
+    current_session.set(session_id)
+    if usage_store is not None:
+        usage_store.open_session(session_id, request.headers.get("user-agent"))
+    try:
+        async with sse.connect_sse(
+            request.scope, request.receive, request._send
+        ) as (read_stream, write_stream):
+            await server.run(
+                read_stream, write_stream, server.create_initialization_options()
+            )
+    finally:
+        if usage_store is not None:
+            usage_store.close_session(session_id)
+    return Response()
 
 
-@app.post("/messages/")
-async def messages_endpoint(request: Request) -> None:
-    """MCP client → server POST endpoint (paired with /sse)."""
-    await sse.handle_post_message(request.scope, request.receive, request._send)
+# MCP client → server POST endpoint (paired with /sse). Mounted as a raw ASGI app,
+# not a FastAPI route: ``handle_post_message`` sends its own 202 response.
+app.router.routes.append(Mount("/messages/", app=sse.handle_post_message))
 
 
 def main() -> None:

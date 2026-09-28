@@ -4,8 +4,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ..bridge import LayaBridge
-from ..errors import ToolError
-from ._helpers import confidence_of, extract_decision, label_is, require_dict
+from ._helpers import require_dict, yes_prob
 from .base import Tool
 
 
@@ -28,12 +27,14 @@ class GuardTool(Tool):
     async def run(self, bridge: LayaBridge, prompt: str) -> GuardOutput:
         raw = bridge.predict(prompt, preset="guard")
         require_dict(raw, self.name)
-        # Guard uses the first question's decision as the canonical signal.
-        first = extract_decision(raw, "q1", self.name)
+        # Flag if either attack question says yes; confidence is in whichever verdict we return.
+        p_attack = max(
+            yes_prob(raw, "jailbreak", self.name),
+            yes_prob(raw, "prompt_injection", self.name),
+        )
+        is_injection = p_attack >= 0.5
         return GuardOutput(
-            is_injection=label_is(first, "injection") or \
-            label_is(first, "jailbreak") or \
-            label_is(first, "attack"),
-            confidence=confidence_of(first),
+            is_injection=is_injection,
+            confidence=p_attack if is_injection else 1.0 - p_attack,
             details=raw,
         )

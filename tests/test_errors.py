@@ -4,7 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from pydantic import ValidationError
+from laya_fixtures import choice, noul, result
 
 from laya_mcp.bridge import LayaBridge
 from laya_mcp.errors import (
@@ -39,9 +39,7 @@ def test_unknown_preset_raises_typed_error() -> None:
 def test_predict_wraps_upstream_runtime_error() -> None:
     """Any exception from Laya is wrapped as BridgeError."""
     bridge = LayaBridge(preload=False)
-    bridge._default_agent = lambda: MagicMock(
-        predict=MagicMock(side_effect=RuntimeError("GPU out of memory"))
-    )
+    bridge.router = MagicMock(predict=MagicMock(side_effect=RuntimeError("GPU out of memory")))
     with pytest.raises(BridgeError) as exc_info:
         bridge.predict("hello", preset="guard")
     # Original exception is chained
@@ -51,21 +49,30 @@ def test_predict_wraps_upstream_runtime_error() -> None:
 
 def test_predict_custom_wraps_upstream_error() -> None:
     bridge = LayaBridge(preload=False)
-    bridge._default_agent = lambda: MagicMock(
-        predict=MagicMock(side_effect=ValueError("bad input"))
-    )
+    bridge.router = MagicMock(predict=MagicMock(side_effect=ValueError("bad input")))
     with pytest.raises(BridgeError) as exc_info:
-        bridge.predict_custom("hello", questions=None)
+        bridge.predict_custom("hello", questions={})
     assert isinstance(exc_info.value.__cause__, ValueError)
 
 
-def test_default_agent_failure_wrapped() -> None:
-    """Failing to access the default agent is wrapped, not propagated raw."""
+def test_bridge_error_message_never_contains_input() -> None:
+    """Log context, not data: the message has the input length, not the input."""
     bridge = LayaBridge(preload=False)
-    # Force agent access to fail
-    type(bridge.router).agents = property(MagicMock(side_effect=KeyError("english")))
-    with pytest.raises(BridgeError):
-        bridge.predict("hello", preset="guard")
+    bridge.router = MagicMock(predict=MagicMock(side_effect=RuntimeError("boom")))
+    with pytest.raises(BridgeError) as exc_info:
+        bridge.predict("super secret prompt", preset="guard")
+    assert "super secret prompt" not in str(exc_info.value)
+    assert "state_len=19" in str(exc_info.value)
+
+
+def test_model_load_failure_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*args, **kwargs):
+        raise OSError("no such checkpoint")
+
+    monkeypatch.setattr("laya_mcp.bridge.Router", boom)
+    with pytest.raises(ModelLoadError) as exc_info:
+        LayaBridge(preload=True)
+    assert isinstance(exc_info.value.__cause__, OSError)
 
 
 # ===========================================================================
@@ -90,25 +97,48 @@ async def test_guard_raises_on_empty_dict() -> None:
 
 
 @pytest.mark.asyncio
-async def test_guard_raises_on_missing_label() -> None:
+async def test_guard_raises_on_missing_answers() -> None:
     bridge = MagicMock()
-    bridge.predict.return_value = {"q1": {"confidence": 0.9}}
-    with pytest.raises(ToolError, match="label"):
+    bridge.predict.return_value = {"model": "x"}
+    with pytest.raises(ToolError, match="answers"):
+        await GuardTool().run(bridge, prompt="test")
+
+
+@pytest.mark.asyncio
+async def test_guard_raises_on_wrong_answer_type() -> None:
+    bridge = MagicMock()
+    bridge.predict.return_value = result(jailbreak=choice("yes"), prompt_injection=noul(0.1))
+    with pytest.raises(ToolError, match="'noul' answer at 'jailbreak'"):
+        await GuardTool().run(bridge, prompt="test")
+
+
+@pytest.mark.asyncio
+async def test_guard_raises_on_missing_value() -> None:
+    bridge = MagicMock()
+    bridge.predict.return_value = result(
+        jailbreak={"type": "noul", "answer_confidence": 0.9}, prompt_injection=noul(0.1)
+    )
+    with pytest.raises(ToolError, match="'noul'"):
         await GuardTool().run(bridge, prompt="test")
 
 
 @pytest.mark.asyncio
 async def test_guard_raises_on_missing_confidence() -> None:
     bridge = MagicMock()
-    bridge.predict.return_value = {"q1": {"label": "injection"}}
-    with pytest.raises(ToolError, match="confidence"):
+    bridge.predict.return_value = result(
+        jailbreak={"type": "noul", "noul": 0.9}, prompt_injection=noul(0.1)
+    )
+    with pytest.raises(ToolError, match="answer_confidence"):
         await GuardTool().run(bridge, prompt="test")
 
 
 @pytest.mark.asyncio
 async def test_guard_raises_on_non_numeric_confidence() -> None:
     bridge = MagicMock()
-    bridge.predict.return_value = {"q1": {"label": "injection", "confidence": "not-a-number"}}
+    bridge.predict.return_value = result(
+        jailbreak={"type": "noul", "noul": 0.9, "answer_confidence": "not-a-number"},
+        prompt_injection=noul(0.1),
+    )
     with pytest.raises(ToolError, match="not numeric"):
         await GuardTool().run(bridge, prompt="test")
 
@@ -125,24 +155,24 @@ async def test_guard_propagates_bridge_error() -> None:
 @pytest.mark.asyncio
 async def test_triage_raises_on_missing_dimension() -> None:
     bridge = MagicMock()
-    bridge.predict.return_value = {
-        "intent": {"label": "billing", "confidence": 0.9},
-        # urgency missing!
-        "churn": {"label": "low", "confidence": 0.7},
-        "frustration": {"label": "low", "confidence": 0.6},
-    }
-    with pytest.raises(ToolError, match="urgency"):
+    bridge.predict.return_value = result(
+        intent=choice("refund"),
+        # is_urgent missing!
+        refund_requested=noul(0.1),
+        churn_risk=noul(0.1),
+    )
+    with pytest.raises(ToolError, match="frustration"):
         await TriageTool().run(bridge, text="...")
 
 
 @pytest.mark.asyncio
 async def test_moderate_raises_on_missing_dimension() -> None:
     bridge = MagicMock()
-    bridge.predict.return_value = {
-        "toxicity": {"label": "toxic", "confidence": 0.9},
-        "harassment": {"label": "none", "confidence": 0.9},
+    bridge.predict.return_value = result(
+        toxic=noul(0.9),
+        harassment=noul(0.1),
         # threat missing!
-    }
+    )
     with pytest.raises(ToolError, match="threat"):
         await ModerateTool().run(bridge, text="...")
 
@@ -150,13 +180,27 @@ async def test_moderate_raises_on_missing_dimension() -> None:
 @pytest.mark.asyncio
 async def test_email_raises_on_non_dict_at_key() -> None:
     bridge = MagicMock()
-    bridge.predict.return_value = {
-        "intent": {"label": "fyi", "confidence": 0.9},
-        "urgency": "not-a-dict",  # malformed!
-        "needs_reply": {"label": "no", "confidence": 0.9},
-    }
+    bridge.predict.return_value = result(
+        category=choice("billing"),
+        urgency="not-a-dict",  # malformed!
+    )
     with pytest.raises(ToolError, match="urgency"):
         await EmailTool().run(bridge, body="...")
+
+
+@pytest.mark.asyncio
+async def test_route_raises_on_missing_probabilities() -> None:
+    bridge = MagicMock()
+    bridge.predict.return_value = result(
+        difficulty={
+            "type": "score",
+            "score": 2.0,
+            "legend": {"0": "a", "1": "b", "2": "c", "3": "d"},
+            "answer_confidence": 0.5,
+        }
+    )
+    with pytest.raises(ToolError, match="probabilities"):
+        await RouteTool().run(bridge, prompt="...")
 
 
 @pytest.mark.asyncio

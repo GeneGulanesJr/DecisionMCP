@@ -1,13 +1,25 @@
 """Helpers shared across tools for validating and extracting Laya output.
 
-Laya returns dicts whose exact shape can drift between versions. These
-helpers validate the parts we depend on and raise :class:`ToolError`
-with context on failure — instead of letting bad data silently produce
-empty/default results.
+``Router.predict`` returns::
+
+    {"model": ..., "answers": {<question>: <answer>, ...}, "usage": {...}, "routing": {...}}
+
+where each answer is one of three typed shapes (chosen by the question type):
+
+- ``choice``: ``{"type": "choice", "choice": "<label>", "probabilities": {...}, ...}``
+- ``noul``:   ``{"type": "noul", "noul": <P(yes)>, ...}``
+- ``score``:  ``{"type": "score", "score": <0..N-1>, "legend": {"0": "...", ...}, ...}``
+
+and every answer carries ``confidence`` and ``answer_confidence`` in [0, 1].
+The helpers below validate exactly the parts we depend on and raise
+:class:`ToolError` with context on failure, instead of letting bad data
+silently produce empty/default results.
 """
 from __future__ import annotations
 
 from ..errors import ToolError
+
+_VALUE_KEY = {"choice": "choice", "noul": "noul", "score": "score"}
 
 
 def require_dict(raw, tool_name: str) -> dict:
@@ -26,72 +38,102 @@ def require_dict(raw, tool_name: str) -> dict:
     return raw
 
 
-def extract_decision(raw: dict, key: str, tool_name: str) -> dict:
-    """Extract and validate a single question's decision dict.
+def extract_answer(raw: dict, key: str, kind: str, tool_name: str) -> dict:
+    """Extract and validate the answer to question ``key`` of type ``kind``.
 
-    Validates that:
-    - ``key`` exists in ``raw``
-    - ``raw[key]`` is a dict
-    - ``raw[key]`` has a ``label`` field
-    - ``raw[key]`` has a numeric ``confidence`` field
+    Validates that ``raw["answers"][key]`` is a dict of the expected ``type``,
+    carries the type's value field, and has a numeric ``answer_confidence``.
 
     Raises:
         ToolError: on any of the above.
 
     Returns:
-        The validated entry dict (callers can index ``["label"]`` / ``["confidence"]`` safely).
+        The validated answer dict.
     """
-    if key not in raw:
+    answers = raw.get("answers")
+    if not isinstance(answers, dict) or not answers:
         raise ToolError(
             tool_name,
-            f"Missing expected key {key!r} in Laya result. Got keys: {sorted(raw)}",
+            f"Missing 'answers' in Laya result. Got keys: {sorted(raw)}",
         )
-    entry = raw[key]
+    if key not in answers:
+        raise ToolError(
+            tool_name,
+            f"Missing expected key {key!r} in Laya answers. Got keys: {sorted(answers)}",
+        )
+    entry = answers[key]
     if not isinstance(entry, dict):
         raise ToolError(
             tool_name,
             f"Expected dict at {key!r}, got {type(entry).__name__}: {entry!r}",
         )
-    if "label" not in entry:
-        raise ToolError(tool_name, f"Missing 'label' at {key!r}: {entry!r}")
-    if "confidence" not in entry:
-        raise ToolError(tool_name, f"Missing 'confidence' at {key!r}: {entry!r}")
+    if entry.get("type") != kind:
+        raise ToolError(
+            tool_name,
+            f"Expected {kind!r} answer at {key!r}, got type {entry.get('type')!r}",
+        )
+    value_key = _VALUE_KEY[kind]
+    if value_key not in entry:
+        raise ToolError(tool_name, f"Missing {value_key!r} at {key!r}: {entry!r}")
+    if "answer_confidence" not in entry:
+        raise ToolError(tool_name, f"Missing 'answer_confidence' at {key!r}: {entry!r}")
     try:
-        float(entry["confidence"])
+        float(entry["answer_confidence"])
     except (TypeError, ValueError) as e:
         raise ToolError(
             tool_name,
-            f"Confidence at {key!r} is not numeric: {entry['confidence']!r}",
+            f"Confidence at {key!r} is not numeric: {entry['answer_confidence']!r}",
         ) from e
+    if kind == "score" and not isinstance(entry.get("legend"), dict):
+        raise ToolError(tool_name, f"Missing 'legend' at {key!r}: {entry!r}")
+    if kind == "choice" and not isinstance(entry["choice"], str):
+        raise ToolError(tool_name, f"Non-string 'choice' at {key!r}: {entry!r}")
     return entry
 
 
-def label_is(entry: dict, positive_value: str) -> bool:
-    """Case-insensitive equality check on ``entry['label']``."""
-    return str(entry.get("label", "")).lower() == positive_value.lower()
+def choice_of(raw: dict, key: str, tool_name: str) -> tuple[str, float]:
+    """``(label, confidence)`` of a ``choice`` question."""
+    entry = extract_answer(raw, key, "choice", tool_name)
+    return entry["choice"], float(entry["answer_confidence"])
 
 
-def label_is_yes(entry: dict) -> bool:
-    """True if ``entry['label']`` is one of ``yes``/``true``/``1``."""
-    return str(entry.get("label", "")).lower() in {"yes", "true", "1"}
+def yes_prob(raw: dict, key: str, tool_name: str) -> float:
+    """P(yes) of a ``noul`` question."""
+    entry = extract_answer(raw, key, "noul", tool_name)
+    try:
+        return float(entry["noul"])
+    except (TypeError, ValueError) as e:
+        raise ToolError(tool_name, f"'noul' at {key!r} is not numeric: {entry['noul']!r}") from e
 
 
-def confidence_of(entry: dict) -> float:
-    """Get the numeric confidence from a validated entry."""
-    return float(entry["confidence"])
+def score_level(raw: dict, key: str, tool_name: str) -> tuple[int, str, float]:
+    """``(level, legend_text, confidence)`` of a ``score`` question.
 
-
-def max_confidence(raw: dict) -> float:
-    """Max confidence across all decision dicts in ``raw``.
-
-    Skips entries that aren't dicts or have non-numeric confidence.
-    Returns ``0.0`` if nothing usable is found.
+    ``level`` is the nearest integer level to the model's expected score,
+    clamped to the legend's range.
     """
-    confs: list[float] = []
-    for v in raw.values():
-        if isinstance(v, dict) and "confidence" in v:
-            try:
-                confs.append(float(v["confidence"]))
-            except (TypeError, ValueError):
-                pass
-    return max(confs) if confs else 0.0
+    entry = extract_answer(raw, key, "score", tool_name)
+    legend = entry["legend"]
+    try:
+        top = max(int(k) for k in legend)
+        level = min(max(round(float(entry["score"])), 0), top)
+        text = str(legend[str(level)])
+    except (TypeError, ValueError, KeyError) as e:
+        raise ToolError(
+            tool_name, f"Malformed score/legend at {key!r}: {entry!r}", cause=e
+        ) from e
+    return level, text, float(entry["answer_confidence"])
+
+
+def bin_mass(raw: dict, key: str, levels: set[int], tool_name: str) -> float:
+    """Probability mass the model puts on ``levels`` of a ``score`` question."""
+    entry = extract_answer(raw, key, "score", tool_name)
+    probs = entry.get("probabilities")
+    if not isinstance(probs, dict):
+        raise ToolError(tool_name, f"Missing 'probabilities' at {key!r}: {entry!r}")
+    try:
+        return sum(float(probs[str(i)]) for i in levels)
+    except (TypeError, ValueError, KeyError) as e:
+        raise ToolError(
+            tool_name, f"Malformed score probabilities at {key!r}: {probs!r}", cause=e
+        ) from e

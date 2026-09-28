@@ -11,6 +11,7 @@ the raw input — to avoid leaking user data into logs.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Callable
 
 from laya import Router
@@ -23,6 +24,7 @@ from laya.presets import (
 )
 
 from .errors import BridgeError, ModelLoadError, UnknownPresetError
+from .usage import UsageStore
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +45,18 @@ class LayaBridge:
         "email": email_questions,
     }
 
-    def __init__(self, preload: bool = True) -> None:
+    # Each preset's instructions refer to its input by name (e.g. "`prompt`"), so the
+    # text must be passed as ``{key: text}``. Mirrors ``laya.cli.PRESET_STATE_KEYS``.
+    PRESET_STATE_KEYS: dict[str, str] = {
+        "guard": "prompt",
+        "route": "request",
+        "moderate": "post",
+        "triage": "message",
+        "email": "body",
+    }
+
+    def __init__(self, preload: bool = True, usage: UsageStore | None = None) -> None:
+        self.usage = usage
         try:
             self.router = Router(preload=preload)
         except Exception as e:
@@ -63,7 +76,7 @@ class LayaBridge:
             preset: Key from :attr:`PRESETS`.
 
         Returns:
-            Whatever Laya's ``agent.predict()`` returns.
+            Whatever Laya's ``Router.predict()`` returns (see ``tools/_helpers.py``).
 
         Raises:
             UnknownPresetError: if ``preset`` isn't in :attr:`PRESETS`.
@@ -74,39 +87,64 @@ class LayaBridge:
             raise UnknownPresetError(
                 f"Unknown preset {preset!r}. Choose from {sorted(self.PRESETS)}."
             )
-        agent = self._default_agent()
-        try:
-            return agent.predict(state, self.PRESETS[preset]())
-        except Exception as e:
-            logger.exception("Laya predict failed (preset=%s, state_len=%d)", preset, len(state))
-            raise BridgeError(
-                f"Laya predict failed (preset={preset!r}, state_len={len(state)})"
-            ) from e
+        return self._run(
+            state,
+            self.PRESETS[preset](),
+            state_key=self.PRESET_STATE_KEYS[preset],
+            label=f"preset={preset!r}",
+            preset=preset,
+        )
 
-    def predict_custom(self, state: str, questions: Any) -> Any:
+    def predict_custom(self, state: str, questions: Any, state_key: str = "text") -> Any:
         """Run a custom questions schema (not from upstream presets).
+
+        Args:
+            state: Input text.
+            questions: Laya question dict (``{name: {"type", "instructions", ...}}``).
+            state_key: Field name the question instructions use to refer to the text.
 
         Raises:
             BridgeError: if the upstream Laya call fails.
         """
-        agent = self._default_agent()
-        try:
-            return agent.predict(state, questions)
-        except Exception as e:
-            logger.exception("Laya predict_custom failed (state_len=%d)", len(state))
-            raise BridgeError(
-                f"Laya predict_custom failed (state_len={len(state)})"
-            ) from e
+        return self._run(state, questions, state_key=state_key, label="custom", preset=None)
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
-    def _default_agent(self) -> Any:
-        """Return the default agent. Wrapped to convert key/index issues into BridgeError."""
+    def _run(
+        self, text: str, questions: Any, *, state_key: str, label: str, preset: str | None
+    ) -> Any:
+        started = time.perf_counter()
         try:
-            return self.router.agents["english"]
+            result = self.router.predict({state_key: text}, questions)
         except Exception as e:
+            logger.exception("Laya predict failed (%s, state_len=%d)", label, len(text))
+            self._record(text, preset, None, started, e)
             raise BridgeError(
-                f"Could not access default 'english' agent: {e}"
+                f"Laya predict failed ({label}, state_len={len(text)})"
             ) from e
+        self._record(text, preset, result, started, None)
+        return result
+
+    def _record(
+        self,
+        text: str,
+        preset: str | None,
+        result: Any,
+        started: float,
+        error: BaseException | None,
+    ) -> None:
+        """Log the call. A logging failure must never fail the prediction."""
+        if self.usage is None:
+            return
+        try:
+            self.usage.record(
+                text=text,
+                preset=preset,
+                result=result if isinstance(result, dict) else None,
+                elapsed_ms=(time.perf_counter() - started) * 1000,
+                error=error,
+            )
+        except Exception:
+            logger.exception("Usage logging failed (state_len=%d)", len(text))

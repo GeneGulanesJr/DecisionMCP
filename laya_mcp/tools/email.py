@@ -4,12 +4,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ..bridge import LayaBridge
-from ._helpers import (
-    confidence_of,
-    extract_decision,
-    label_is_yes,
-    require_dict,
-)
+from ._helpers import choice_of, require_dict, score_level, yes_prob
 from .base import Tool
 
 
@@ -18,29 +13,35 @@ class EmailInput(BaseModel):
 
 
 class EmailOutput(BaseModel):
-    intent: str
+    category: str = Field(..., description="Team that should handle it (billing / technical / sales / ...).")
     urgency: str
     needs_reply: bool
+    is_spam: bool
+    is_phishing: bool
     confidence: float = Field(..., ge=0.0, le=1.0)
     details: dict = Field(default_factory=dict)
 
 
 class EmailTool(Tool):
     name = "laya_email"
-    description = "Classify an email's intent, urgency, and whether it needs a reply."
+    description = (
+        "Triage an email: owning team (category), urgency, whether it needs a reply, "
+        "and whether it is spam or phishing."
+    )
     input_schema = EmailInput
     output_schema = EmailOutput
 
     async def run(self, bridge: LayaBridge, body: str) -> EmailOutput:
         raw = bridge.predict(body, preset="email")
         require_dict(raw, self.name)
-        intent = extract_decision(raw, "intent", self.name)
-        urgency = extract_decision(raw, "urgency", self.name)
-        needs_reply = extract_decision(raw, "needs_reply", self.name)
+        category, confidence = choice_of(raw, "category", self.name)  # primary signal
+        _, urgency, _ = score_level(raw, "urgency", self.name)
         return EmailOutput(
-            intent=str(intent["label"]),
-            urgency=str(urgency["label"]),
-            needs_reply=label_is_yes(needs_reply),
-            confidence=confidence_of(intent),
+            category=category,
+            urgency=urgency,
+            needs_reply=yes_prob(raw, "needs_reply", self.name) >= 0.5,
+            is_spam=yes_prob(raw, "is_spam", self.name) >= 0.5,
+            is_phishing=yes_prob(raw, "is_phishing", self.name) >= 0.5,
+            confidence=confidence,
             details=raw,
         )

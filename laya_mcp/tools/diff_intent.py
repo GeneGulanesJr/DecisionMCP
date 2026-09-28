@@ -2,37 +2,48 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from laya.common import build_sequence, render_options
 
 from ..bridge import LayaBridge
-from ._helpers import confidence_of, extract_decision, require_dict
+from ._helpers import choice_of, require_dict
 from .base import Tool
 
+_STATE_KEY = "diff"
 
-_DIFF_QUESTIONS = build_sequence(
-    render_options(
-        [
-            "add_feature",
-            "fix_bug",
-            "refactor",
-            "perf",
-            "docs",
-            "test",
-            "build",
-            "chore",
-            "revert",
-        ],
-        key="intent",
-    ),
-    render_options(
-        ["single_file", "module", "cross_cutting"],
-        key="scope",
-    ),
-    render_options(
-        ["low", "medium", "high"],
-        key="risk",
-    ),
-)
+_DIFF_QUESTIONS = {
+    "intent": {
+        "type": "choice",
+        "instructions": "What is the `diff` trying to achieve?",
+        "criteria": {
+            "add_feature": "adds new functionality",
+            "fix_bug": "fixes incorrect behaviour",
+            "refactor": "restructures code without changing behaviour",
+            "perf": "makes something faster or lighter",
+            "docs": "changes documentation or comments only",
+            "test": "adds or changes tests only",
+            "build": "changes build, packaging or dependencies",
+            "chore": "maintenance or housekeeping",
+            "revert": "undoes an earlier change",
+        },
+    },
+    "scope": {
+        "type": "choice",
+        "instructions": "How widely does the `diff` reach across the codebase?",
+        "criteria": {
+            "single_file": "confined to one file",
+            "module": "several files in one module or feature",
+            "cross_cutting": "touches many modules or shared infrastructure",
+        },
+    },
+    "risk": {
+        "type": "choice",
+        "instructions": "How likely is the `diff` to break something in production?",
+        "criteria": {
+            "low": "additive, isolated or non-functional change",
+            "medium": "changes existing behaviour in one area",
+            "high": "sweeping, security-sensitive or data-affecting change",
+        },
+    },
+}
 
 
 class DiffIntentInput(BaseModel):
@@ -58,15 +69,15 @@ class DiffIntentTool(Tool):
     output_schema = DiffIntentOutput
 
     async def run(self, bridge: LayaBridge, diff: str) -> DiffIntentOutput:
-        raw = bridge.predict_custom(diff, questions=_DIFF_QUESTIONS)
+        raw = bridge.predict_custom(diff, questions=_DIFF_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
-        intent_entry = extract_decision(raw, "intent", self.name)
-        scope_entry = extract_decision(raw, "scope", self.name)
-        risk_entry = extract_decision(raw, "risk", self.name)
+        intent, confidence = choice_of(raw, "intent", self.name)
+        scope, _ = choice_of(raw, "scope", self.name)
+        risk, _ = choice_of(raw, "risk", self.name)
         return DiffIntentOutput(
-            intent=str(intent_entry["label"]),
-            scope=str(scope_entry["label"]),
-            risk=str(risk_entry["label"]),
-            confidence=confidence_of(intent_entry),
+            intent=intent,
+            scope=scope,
+            risk=risk,
+            confidence=confidence,
             details=raw,
         )

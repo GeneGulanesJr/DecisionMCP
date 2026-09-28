@@ -4,7 +4,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ..bridge import LayaBridge
-from ._helpers import confidence_of, extract_decision, require_dict
+from ._helpers import choice_of, require_dict, score_level, yes_prob
 from .base import Tool
 
 
@@ -14,8 +14,9 @@ class TriageInput(BaseModel):
 
 class TriageOutput(BaseModel):
     intent: str
-    urgency: str
-    churn_risk: str
+    is_urgent: bool
+    churn_risk: bool
+    refund_requested: bool
     frustration: str
     confidence: float = Field(..., ge=0.0, le=1.0)
     details: dict = Field(default_factory=dict)
@@ -23,22 +24,24 @@ class TriageOutput(BaseModel):
 
 class TriageTool(Tool):
     name = "laya_triage"
-    description = "Classify a support ticket's intent, urgency, churn risk, and frustration."
+    description = (
+        "Classify a support ticket's intent, urgency, churn risk, refund request, "
+        "and frustration level."
+    )
     input_schema = TriageInput
     output_schema = TriageOutput
 
     async def run(self, bridge: LayaBridge, text: str) -> TriageOutput:
         raw = bridge.predict(text, preset="triage")
         require_dict(raw, self.name)
-        intent = extract_decision(raw, "intent", self.name)
-        urgency = extract_decision(raw, "urgency", self.name)
-        churn = extract_decision(raw, "churn", self.name)
-        frustration = extract_decision(raw, "frustration", self.name)
+        intent, confidence = choice_of(raw, "intent", self.name)  # primary signal
+        _, frustration, _ = score_level(raw, "frustration", self.name)
         return TriageOutput(
-            intent=str(intent["label"]),
-            urgency=str(urgency["label"]),
-            churn_risk=str(churn["label"]),
-            frustration=str(frustration["label"]),
-            confidence=confidence_of(intent),  # intent is the primary signal
+            intent=intent,
+            is_urgent=yes_prob(raw, "is_urgent", self.name) >= 0.5,
+            churn_risk=yes_prob(raw, "churn_risk", self.name) >= 0.5,
+            refund_requested=yes_prob(raw, "refund_requested", self.name) >= 0.5,
+            frustration=frustration,
+            confidence=confidence,
             details=raw,
         )
