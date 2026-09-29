@@ -40,6 +40,21 @@ def test_text_not_stored_by_default(tmp_path) -> None:
     assert "my private prompt" not in out.read_text()
 
 
+def test_export_jsonl_labeled_only(tmp_path) -> None:
+    """labeled_only drops rows without stored text (training-ready pairs only)."""
+    store = UsageStore(tmp_path / "u.db", store_text=True)
+    _record(store, text="train on me", session="s-keep")
+    # laya_secret_risk text is never stored, so its row has no label input.
+    _record(store, text="secret", tool="laya_secret_risk", session="s-drop")
+    out = tmp_path / "labeled.jsonl"
+    assert store.export_jsonl(out, labeled_only=True) == 1
+    row = json.loads(out.read_text())
+    assert row["input"] == "train on me"
+    assert row["session_id"] == "s-keep"
+    # plain export still returns both rows
+    assert store.export_jsonl(tmp_path / "all.jsonl") == 2
+
+
 def test_text_stored_when_enabled(tmp_path) -> None:
     store = UsageStore(tmp_path / "u.db", store_text=True)
     _record(store, text="my prompt")
@@ -110,6 +125,17 @@ async def test_usage_tool_export_writes_under_data_dir(tmp_path) -> None:
     assert out.exported_rows == 1
     assert out.export_path.startswith(str(tmp_path / "exports"))
     assert len(open(out.export_path).read().splitlines()) == 1
+
+
+@pytest.mark.asyncio
+async def test_usage_tool_export_labeled_only(tmp_path) -> None:
+    store = UsageStore(tmp_path / "u.db", store_text=True)
+    _record(store, text="pair me")
+    bridge = MagicMock(usage=store)
+    out = await UsageTool().run(bridge, action="export", labeled_only=True)
+    assert out.exported_rows == 1
+    row = json.loads(open(out.export_path).read())
+    assert row["input"] == "pair me"
 
 
 @pytest.mark.asyncio

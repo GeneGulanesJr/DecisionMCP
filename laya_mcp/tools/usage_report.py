@@ -23,6 +23,13 @@ class UsageInput(BaseModel):
     since_hours: float | None = Field(
         None, gt=0, description="Only include calls from the last N hours."
     )
+    labeled_only: bool = Field(
+        False,
+        description=(
+            "Export only rows that carry input text (ready training pairs). "
+            "Requires LAYAMCP_USAGE_STORE_TEXT=true at call time. Export only."
+        ),
+    )
 
 
 class UsageOutput(BaseModel):
@@ -41,7 +48,11 @@ class UsageTool(Tool):
     output_schema = UsageOutput
 
     async def run(
-        self, bridge: LayaBridge, action: str = "stats", since_hours: float | None = None
+        self,
+        bridge: LayaBridge,
+        action: str = "stats",
+        since_hours: float | None = None,
+        labeled_only: bool = False,
     ) -> UsageOutput:
         store = bridge.usage
         if store is None:
@@ -51,6 +62,7 @@ class UsageTool(Tool):
         if action != "export":
             return UsageOutput(stats=stats)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        path = store.path.parent / "exports" / f"usage-{stamp}.jsonl"
-        rows = store.export_jsonl(path, since)
+        suffix = "-labeled" if labeled_only else ""
+        path = store.path.parent / "exports" / f"usage{suffix}-{stamp}.jsonl"
+        rows = store.export_jsonl(path, since, labeled_only=labeled_only)
         return UsageOutput(stats=stats, export_path=str(path), exported_rows=rows)

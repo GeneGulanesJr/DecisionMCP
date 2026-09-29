@@ -174,18 +174,25 @@ class UsageStore:
             "db_path": str(self.path),
         }
 
-    def export_jsonl(self, out_path: Path, since: float | None = None) -> int:
+    def export_jsonl(
+        self, out_path: Path, since: float | None = None, *, labeled_only: bool = False
+    ) -> int:
         """Write successful calls as JSONL and return the row count.
 
         Each line: ``{run_id, ts, session_id, tool, preset, model, input, answers}``.
         ``input`` is ``null`` unless text storage was on when the call was made.
+        With ``labeled_only=True`` only rows that carry input text are written —
+        i.e. ready (text, answers) training pairs.
         """
-        where, args = ("AND ts >= ?", (since,)) if since else ("", ())
+        where, args = "WHERE status = 'ok'", []
+        if since:
+            where += " AND ts >= ?"
+            args.append(since)
+        if labeled_only:
+            where += " AND input_text IS NOT NULL"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
-            rows = self._db.execute(
-                f"SELECT * FROM calls WHERE status = 'ok' {where} ORDER BY id", args
-            ).fetchall()
+            rows = self._db.execute(f"SELECT * FROM calls {where} ORDER BY id", args).fetchall()
         with out_path.open("w", encoding="utf-8") as f:
             for r in rows:
                 f.write(

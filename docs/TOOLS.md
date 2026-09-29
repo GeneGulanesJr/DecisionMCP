@@ -413,13 +413,13 @@ Network failures (PyPI or the Hub unreachable) raise `ToolError` rather than ret
 
 Summarise what Laya has been used for, or export it as training data. Laya only exposes per-call hooks (`run_id`, token usage, timing) and persists nothing, so LayaMCP keeps its own log.
 
-**Input:** `action`: `"stats"` (default) or `"export"`; optional `since_hours`.
+**Input:** `action`: `"stats"` (default) or `"export"`; optional `since_hours`; for `export`, optional `labeled_only` (only rows that carry input text — ready `(input, answers)` training pairs; the export file is then named `usage-labeled-<timestamp>.jsonl`).
 
 **What is logged:** every prediction, success or failure, in a SQLite file (`<data_dir>/usage.db`, default `./data/usage.db`): timestamp, MCP session id, tool, preset, checkpoint that answered, latency, input length and tokens, Laya's full answers (labels + probabilities) and routing. One `sessions` row per MCP connection records the client's user-agent and when it disconnected.
 
 **Input text is NOT stored by default**, because inputs can hold prompts, source code and credentials. Set `LAYAMCP_USAGE_STORE_TEXT=true` to keep it; that is what makes an export usable as `(input, answers)` pairs. Even then, text sent to `laya_secret_risk` is never stored.
 
-**`export`** writes successful calls as JSONL to `<data_dir>/exports/usage-<timestamp>.jsonl` and returns the path and row count (the file path is never caller-supplied). Each line: `{run_id, ts, session_id, tool, preset, model, input, answers}`, where `input` is `null` for calls made while text storage was off.
+**`export`** writes successful calls as JSONL to `<data_dir>/exports/usage-<timestamp>.jsonl` and returns the path and row count (the file path is never caller-supplied). Each line: `{run_id, ts, session_id, tool, preset, model, input, answers}`, where `input` is `null` for calls made while text storage was off. Pass `labeled_only=true` to skip those rows entirely.
 
 The Laya answers are the model's own predictions, not ground truth. For supervised training you will still need to review or correct them.
 
