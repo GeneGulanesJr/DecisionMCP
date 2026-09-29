@@ -25,7 +25,8 @@ def backup(db_path: Path, out_dir: Path, *, keep: int = DEFAULT_KEEP) -> Path:
     Retention: keeps the ``keep`` newest ``usage-*.db`` snapshots.
     """
     if not db_path.exists():
-        raise FileNotFoundError(f"usage DB not found: {db_path}")
+        print(f"no usage DB at {db_path}; nothing to back up")
+        return None
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     dest = out_dir / f"usage-{stamp}.db"
@@ -62,9 +63,11 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     try:
         dest = backup(args.db, args.out, keep=args.keep)
-    except (FileNotFoundError, sqlite3.Error) as e:
+    except sqlite3.Error as e:
         print(f"backup failed: {e}", file=sys.stderr)
         return 1
+    if dest is None:
+        return 0
     print(dest)
     return 0
 

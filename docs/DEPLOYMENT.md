@@ -9,32 +9,53 @@ layamcp
 
 Runs on `http://127.0.0.1:8765` (default).
 
-## macOS — launchd
+## macOS — launchd (optional) + Pi lifecycle extension
 
-Two user agents keep the server always-on and the corpus backed up.
-Templates live in [`deploy/launchd/`](../deploy/launchd/) (paths assume the
-repo at `~/Documents/GulanesKorp/LayaMCP` — adjust if yours differs):
+Two ways to run the server on macOS; pick one for the server itself. The
+nightly backup agent is independent of both.
+
+**Mode A — start/stop with Pi (default, active).** The
+[`integrations/pi/layamcp-lifecycle.ts`](../integrations/pi/layamcp-lifecycle.ts)
+extension starts the server with the first Pi session, shares one instance
+across concurrent Pi sessions (refcount file + lockfile under `data/`), and
+stops it — after a final backup — when the last session closes. Install:
+
+```bash
+ln -sf "$PWD/integrations/pi/layamcp-lifecycle.ts" ~/.pi/agent/extensions/layamcp-lifecycle.ts
+```
+
+Cold start (first Pi of the day) waits ~10–40 s for model preload; warm starts
+are instant. See `integrations/pi/README.md`.
+
+**Mode B — always-on via launchd.** For a server that runs regardless of Pi:
 
 | Agent | What it does |
 | --- | --- |
 | `com.gulaneskorp.layamcp` | Runs `.venv/bin/layamcp` on login, restarts it if it crashes (`KeepAlive`), logs to `data/logs/layamcp.log` |
-| `com.gulaneskorp.layamcp-backup` | Nightly at 03:00, runs `scripts/backup_usage.py`: WAL-safe SQLite snapshot to `data/backups/usage-<ts>.db`, keeps the last 14 |
-
-Install:
 
 ```bash
 cp deploy/launchd/com.gulaneskorp.layamcp.plist ~/Library/LaunchAgents/
-cp deploy/launchd/com.gulaneskorp.layamcp-backup.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.layamcp.plist
+```
+
+If you later switch to Mode A: `launchctl bootout gui/$(id -u)/com.gulaneskorp.layamcp`
+(KeepAlive would otherwise resurrect the server after the lifecycle extension
+stops it). Running both modes at once is harmless but redundant.
+
+**Nightly backup agent (keep either way).** At 03:00, runs
+`scripts/backup_usage.py`: WAL-safe SQLite snapshot to `data/backups/usage-<ts>.db`,
+keeps the last 14; a missing DB (fresh install) is a clean no-op.
+
+```bash
+cp deploy/launchd/com.gulaneskorp.layamcp-backup.plist ~/Library/LaunchAgents/
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.layamcp-backup.plist
 ```
 
 Operate:
 
 ```bash
-launchctl kickstart -k gui/$(id -u)/com.gulaneskorp.layamcp          # restart server
 launchctl kickstart gui/$(id -u)/com.gulaneskorp.layamcp-backup      # backup now
-launchctl print gui/$(id -u)/com.gulaneskorp.layamcp | head          # state / pid
+launchctl print gui/$(id -u)/com.gulaneskorp.layamcp-backup | head   # state
 ```
 
 Manual backups any time: `.venv/bin/python scripts/backup_usage.py --keep 14`.

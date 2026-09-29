@@ -44,7 +44,8 @@ def test_backup_retention_prunes_oldest(tmp_path) -> None:
     assert oldest_kept.stat().st_mtime_ns <= newest.stat().st_mtime_ns
 
 
-def test_main_missing_db_fails(tmp_path, capsys) -> None:
+def test_main_missing_db_is_noop(tmp_path, capsys) -> None:
+    """Fresh install: nightly agent runs before any capture — clean no-op."""
     rc = main(["--db", str(tmp_path / "nope.db"), "--out", str(tmp_path / "b")])
-    assert rc == 1
-    assert "not found" in capsys.readouterr().err
+    assert rc == 0
+    assert "nothing to back up" in capsys.readouterr().out
