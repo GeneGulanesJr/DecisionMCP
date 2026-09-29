@@ -55,6 +55,62 @@ def test_export_jsonl_labeled_only(tmp_path) -> None:
     assert store.export_jsonl(tmp_path / "all.jsonl") == 2
 
 
+def test_laya_version_recorded(tmp_path) -> None:
+    """Every row carries the laya lib version that produced the labels."""
+    import importlib.metadata as m
+
+    store = UsageStore(tmp_path / "u.db")
+    _record(store)
+    out = tmp_path / "v.jsonl"
+    store.export_jsonl(out)
+    row = json.loads(out.read_text())
+    assert row["laya_version"] == m.version("laya")
+
+
+def test_migration_adds_laya_version_to_existing_db(tmp_path) -> None:
+    """A pre-provenance DB is migrated in place; old rows stay readable."""
+    import sqlite3
+
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(
+        """
+        CREATE TABLE calls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id TEXT NOT NULL,
+            ts REAL NOT NULL,
+            session_id TEXT,
+            tool TEXT,
+            preset TEXT,
+            model TEXT,
+            status TEXT NOT NULL,
+            error TEXT,
+            elapsed_ms REAL,
+            input_chars INTEGER NOT NULL,
+            input_tokens INTEGER,
+            answers TEXT,
+            routing TEXT,
+            input_text TEXT
+        );
+        INSERT INTO calls(run_id, ts, status, input_chars)
+        VALUES ('legacy', 0.0, 'ok', 3);
+        """
+    )
+    conn.commit()
+    conn.close()
+
+    store = UsageStore(db)
+    _record(store, session="s-new")
+    out = tmp_path / "m.jsonl"
+    store.export_jsonl(out)
+    rows = [json.loads(line) for line in out.read_text().splitlines()]
+    assert len(rows) == 2
+    legacy = next(r for r in rows if r["run_id"] == "legacy")
+    assert legacy["laya_version"] is None  # old row: provenance unknown
+    fresh = next(r for r in rows if r["session_id"] == "s-new")
+    assert fresh["laya_version"]  # new row: version captured
+
+
 def test_text_stored_when_enabled(tmp_path) -> None:
     store = UsageStore(tmp_path / "u.db", store_text=True)
     _record(store, text="my prompt")

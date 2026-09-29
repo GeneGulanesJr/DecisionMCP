@@ -17,10 +17,20 @@ import threading
 import time
 import uuid
 from contextvars import ContextVar
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _metadata_version
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _laya_version() -> str | None:
+    """Installed ``laya`` lib version — label provenance for every row."""
+    try:
+        return _metadata_version("laya")
+    except PackageNotFoundError:
+        return None
 
 # Set by the server around each request so the bridge can attribute a
 # prediction to the MCP tool and connection that caused it.
@@ -51,7 +61,8 @@ CREATE TABLE IF NOT EXISTS calls (
     input_tokens INTEGER,
     answers      TEXT,
     routing      TEXT,
-    input_text   TEXT
+    input_text   TEXT,
+    laya_version TEXT
 );
 CREATE INDEX IF NOT EXISTS calls_ts ON calls(ts);
 CREATE INDEX IF NOT EXISTS calls_tool ON calls(tool);
@@ -65,6 +76,7 @@ class UsageStore:
     def __init__(self, path: Path, *, store_text: bool = False) -> None:
         self.path = Path(path)
         self.store_text = store_text
+        self.laya_version = _laya_version()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._db = sqlite3.connect(self.path, check_same_thread=False)
@@ -72,7 +84,14 @@ class UsageStore:
         with self._lock:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.executescript(_SCHEMA)
+            self._migrate()
             self._db.commit()
+
+    def _migrate(self) -> None:
+        """In-place, additive migrations for DBs created by older versions."""
+        cols = {r["name"] for r in self._db.execute("PRAGMA table_info(calls)")}
+        if "laya_version" not in cols:
+            self._db.execute("ALTER TABLE calls ADD COLUMN laya_version TEXT")
 
     # ------------------------------------------------------------------
     # Writes
@@ -116,8 +135,8 @@ class UsageStore:
         with self._lock:
             self._db.execute(
                 "INSERT INTO calls(run_id, ts, session_id, tool, preset, model, status, error,"
-                " elapsed_ms, input_chars, input_tokens, answers, routing, input_text)"
-                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " elapsed_ms, input_chars, input_tokens, answers, routing, input_text, laya_version)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     run_id,
                     time.time(),
@@ -133,6 +152,7 @@ class UsageStore:
                     json.dumps(result.get("answers")) if result.get("answers") else None,
                     json.dumps(routing) if routing else None,
                     text if keep_text else None,
+                    self.laya_version,
                 ),
             )
             self._db.commit()
@@ -159,6 +179,11 @@ class UsageStore:
             by_model = self._db.execute(
                 f"SELECT COALESCE(model, '?') m, COUNT(*) n FROM calls {where} GROUP BY m", args
             ).fetchall()
+            by_laya_version = self._db.execute(
+                f"SELECT COALESCE(laya_version, 'unknown') v, COUNT(*) n FROM calls {where}"
+                " GROUP BY v ORDER BY n DESC",
+                args,
+            ).fetchall()
             sessions = self._db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         return {
             "calls": total["n"],
@@ -170,6 +195,7 @@ class UsageStore:
             "rows_with_text": total["with_text"] or 0,
             "by_tool": {r["t"]: r["n"] for r in by_tool},
             "by_model": {r["m"]: r["n"] for r in by_model},
+            "by_laya_version": {r["v"]: r["n"] for r in by_laya_version},
             "store_text": self.store_text,
             "db_path": str(self.path),
         }
@@ -204,6 +230,7 @@ class UsageStore:
                             "tool": r["tool"],
                             "preset": r["preset"],
                             "model": r["model"],
+                            "laya_version": r["laya_version"],
                             "input": r["input_text"],
                             "answers": json.loads(r["answers"]) if r["answers"] else None,
                         },
