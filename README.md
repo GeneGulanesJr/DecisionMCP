@@ -58,20 +58,39 @@ Every prediction is logged to `./data/usage.db` with its MCP session, for traini
 
 ## Configure Pi
 
-Add to your Pi MCP config:
+Pi (v0.87.x) has no built-in MCP client; it attaches MCP servers through the
+[`pi-mcp-extension`](https://www.npmjs.com/package/pi-mcp-extension) bridge:
+
+```bash
+pi install npm:pi-mcp-extension
+```
+
+Then register this server in `~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per-project):
 
 ```json
 {
+  "settings": {
+    "toolPrefix": "mcp",
+    "requestTimeoutMs": 30000,
+    "maxRetries": 5
+  },
   "mcpServers": {
     "layamcp": {
-      "type": "http",
-      "url": "http://127.0.0.1:8765"
+      "transport": "sse",
+      "url": "http://127.0.0.1:8765/sse",
+      "lifecycle": "eager",
+      "healthCheckIntervalMs": 60000
     }
   }
 }
 ```
 
-Pi will then see all 13 `laya_*` tools as native tools. Note the server speaks MCP over SSE at `/sse`, so if your client asks for an SSE URL rather than a base URL, use `http://127.0.0.1:8765/sse`.
+Start the server first (`layamcp`), then start Pi — all 13 tools appear as
+`mcp_layamcp_<tool>` (e.g. `mcp_layamcp_laya_guard`, argument is `prompt`).
+Use `/mcp` inside Pi to check connection status; with `lifecycle: "eager"` Pi
+connects at session start (5 retries), with `"lazy"` you start it manually via
+`/mcp:start`. The server speaks MCP over SSE at `/sse` (`GET /health` for a
+health check).
 
 ## Documentation
 
