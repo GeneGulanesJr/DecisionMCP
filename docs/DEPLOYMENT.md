@@ -9,7 +9,37 @@ layamcp
 
 Runs on `http://127.0.0.1:8765` (default).
 
-## Linux / macOS — systemd
+## macOS — launchd
+
+Two user agents keep the server always-on and the corpus backed up.
+Templates live in [`deploy/launchd/`](../deploy/launchd/) (paths assume the
+repo at `~/Documents/GulanesKorp/LayaMCP` — adjust if yours differs):
+
+| Agent | What it does |
+| --- | --- |
+| `com.gulaneskorp.layamcp` | Runs `.venv/bin/layamcp` on login, restarts it if it crashes (`KeepAlive`), logs to `data/logs/layamcp.log` |
+| `com.gulaneskorp.layamcp-backup` | Nightly at 03:00, runs `scripts/backup_usage.py`: WAL-safe SQLite snapshot to `data/backups/usage-<ts>.db`, keeps the last 14 |
+
+Install:
+
+```bash
+cp deploy/launchd/com.gulaneskorp.layamcp.plist ~/Library/LaunchAgents/
+cp deploy/launchd/com.gulaneskorp.layamcp-backup.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.layamcp.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.layamcp-backup.plist
+```
+
+Operate:
+
+```bash
+launchctl kickstart -k gui/$(id -u)/com.gulaneskorp.layamcp          # restart server
+launchctl kickstart gui/$(id -u)/com.gulaneskorp.layamcp-backup      # backup now
+launchctl print gui/$(id -u)/com.gulaneskorp.layamcp | head          # state / pid
+```
+
+Manual backups any time: `.venv/bin/python scripts/backup_usage.py --keep 14`.
+
+## Linux — systemd
 
 `/etc/systemd/system/layamcp.service`:
 
