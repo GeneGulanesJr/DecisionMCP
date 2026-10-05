@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ..errors import ToolError
 from .base import Tool
 
@@ -17,7 +17,7 @@ class UsageInput(BaseModel):
         "stats",
         description=(
             "'stats' summarises logged calls. 'export' writes successful calls to a JSONL "
-            "file under the data dir (input is null unless LAYAMCP_USAGE_STORE_TEXT=true)."
+            "file under the data dir (input is null unless DECISIONMCP_USAGE_STORE_TEXT=true)."
         ),
     )
     since_hours: float | None = Field(
@@ -27,7 +27,7 @@ class UsageInput(BaseModel):
         False,
         description=(
             "Export only rows that carry input text (ready training pairs). "
-            "Requires LAYAMCP_USAGE_STORE_TEXT=true at call time. Export only."
+            "Requires DECISIONMCP_USAGE_STORE_TEXT=true at call time. Export only."
         ),
     )
 
@@ -39,24 +39,24 @@ class UsageOutput(BaseModel):
 
 
 class UsageTool(Tool):
-    name = "laya_usage"
+    name = "decision_usage"
     description = (
-        "Summarise logged Laya calls (per tool, model, session, latency) or export them as "
-        "JSONL for training. Text is only kept when LAYAMCP_USAGE_STORE_TEXT=true."
+        "Summarise logged decision calls (per tool, model, session, latency) or export them "
+        "as JSONL for training. Text is only kept when DECISIONMCP_USAGE_STORE_TEXT=true."
     )
     input_schema = UsageInput
     output_schema = UsageOutput
 
     async def run(
         self,
-        bridge: LayaBridge,
+        bridge: DecisionBridge,
         action: str = "stats",
         since_hours: float | None = None,
         labeled_only: bool = False,
     ) -> UsageOutput:
         store = bridge.usage
         if store is None:
-            raise ToolError(self.name, "Usage logging is disabled (LAYAMCP_USAGE_ENABLED=false).")
+            raise ToolError(self.name, "Usage logging is disabled (DECISIONMCP_USAGE_ENABLED=false).")
         since = time.time() - since_hours * 3600 if since_hours else None
         stats = store.stats(since)
         if action != "export":

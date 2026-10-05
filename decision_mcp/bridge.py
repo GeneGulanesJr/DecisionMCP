@@ -1,7 +1,13 @@
-"""Wrapper around the upstream Laya library.
+"""Engine-agnostic bridge between MCP tools and the active decision engine.
 
-Holds a single ``Router`` instance so model weights are loaded exactly once
-per process. Every tool in :mod:`laya_mcp.tools` calls ``bridge.predict(...)``.
+The bridge owns the single engine instance per process (model weights are
+heavy), the preset registry, usage recording, and error normalization.
+Tools never touch the engine directly — they call ``bridge.predict(...)``.
+
+The engine is pluggable: anything satisfying the
+:class:`decision_mcp.engines.base.DecisionEngine` protocol works. The
+default is :class:`~decision_mcp.engines.laya.LayaEngine` (the Laya
+decision library).
 
 Failures are surfaced as :class:`BridgeError` subclasses. The original
 exception (if any) is attached via ``__cause__`` for traceback chaining.
@@ -12,57 +18,47 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable
+from typing import Any
 
-from laya import Router
-from laya.presets import (
-    email_questions,
-    guard_questions,
-    moderation_questions,
-    router_questions,
-    triage_questions,
-)
-
+from .engines import LayaEngine
+from .engines.base import DecisionEngine, PresetSpec
 from .errors import BridgeError, ModelLoadError, UnknownPresetError
 from .usage import UsageStore
 
 logger = logging.getLogger(__name__)
 
 
-class LayaBridge:
-    """Thin in-process wrapper around Laya.
+class DecisionBridge:
+    """Single engine holder + the high-level predict API every tool uses.
 
-    The :class:`laya.Router` picks the right checkpoint (English /
-    multilingual / typed-decisions) per call based on script detection.
-    Tools don't need to know about that — they just call ``predict``.
+    Args:
+        engine: Backend implementing :class:`DecisionEngine`. Defaults to
+            :class:`LayaEngine`.
+        preload: Load model weights immediately (production). ``False`` keeps
+            construction cheap (tests, tooling).
+        usage: Optional :class:`UsageStore` recording every call.
     """
 
-    PRESETS: dict[str, Callable] = {
-        "guard": guard_questions,
-        "route": router_questions,
-        "moderate": moderation_questions,
-        "triage": triage_questions,
-        "email": email_questions,
-    }
-
-    # Each preset's instructions refer to its input by name (e.g. "`prompt`"), so the
-    # text must be passed as ``{key: text}``. Mirrors ``laya.cli.PRESET_STATE_KEYS``.
-    PRESET_STATE_KEYS: dict[str, str] = {
-        "guard": "prompt",
-        "route": "request",
-        "moderate": "post",
-        "triage": "message",
-        "email": "body",
-    }
-
-    def __init__(self, preload: bool = True, usage: UsageStore | None = None) -> None:
+    def __init__(
+        self,
+        engine: DecisionEngine | None = None,
+        *,
+        preload: bool = True,
+        usage: UsageStore | None = None,
+    ) -> None:
         self.usage = usage
         try:
-            self.router = Router(preload=preload)
+            self.engine: DecisionEngine = engine if engine is not None else LayaEngine()
+            if preload:
+                self.engine.preload()
         except Exception as e:
             raise ModelLoadError(
-                f"Failed to initialize Laya Router (preload={preload}): {e}"
+                f"Failed to initialize decision engine (preload={preload}): {e}"
             ) from e
+        # Presets are registered by the engine; custom-question tools bypass them.
+        self.presets: dict[str, PresetSpec] = self.engine.presets()
+        # Engine version can't change within a running process — capture once.
+        self._engine_version: str | None = self.engine.version()
 
     # ------------------------------------------------------------------
     # High-level API used by every tool
@@ -73,38 +69,39 @@ class LayaBridge:
 
         Args:
             state: Input text (prompt, email body, JSON, ticket, etc.).
-            preset: Key from :attr:`PRESETS`.
+            preset: Key from :attr:`presets`.
 
         Returns:
-            Whatever Laya's ``Router.predict()`` returns (see ``tools/_helpers.py``).
+            The engine's normalized decision dict (see ``tools/_helpers.py``).
 
         Raises:
-            UnknownPresetError: if ``preset`` isn't in :attr:`PRESETS`.
-            BridgeError: if the upstream Laya call fails for any reason
+            UnknownPresetError: if ``preset`` isn't in :attr:`presets`.
+            BridgeError: if the engine call fails for any reason
                 (GPU OOM, runtime error, model evicted, etc.).
         """
-        if preset not in self.PRESETS:
+        spec = self.presets.get(preset)
+        if spec is None:
             raise UnknownPresetError(
-                f"Unknown preset {preset!r}. Choose from {sorted(self.PRESETS)}."
+                f"Unknown preset {preset!r}. Choose from {sorted(self.presets)}."
             )
         return self._run(
             state,
-            self.PRESETS[preset](),
-            state_key=self.PRESET_STATE_KEYS[preset],
+            spec.questions,
+            state_key=spec.state_key,
             label=f"preset={preset!r}",
             preset=preset,
         )
 
     def predict_custom(self, state: str, questions: Any, state_key: str = "text") -> Any:
-        """Run a custom questions schema (not from upstream presets).
+        """Run a custom questions schema (not from the engine's presets).
 
         Args:
             state: Input text.
-            questions: Laya question dict (``{name: {"type", "instructions", ...}}``).
+            questions: Question dict (``{name: {"type", "instructions", ...}}``).
             state_key: Field name the question instructions use to refer to the text.
 
         Raises:
-            BridgeError: if the upstream Laya call fails.
+            BridgeError: if the engine call fails.
         """
         return self._run(state, questions, state_key=state_key, label="custom", preset=None)
 
@@ -117,12 +114,12 @@ class LayaBridge:
     ) -> Any:
         started = time.perf_counter()
         try:
-            result = self.router.predict({state_key: text}, questions)
+            result = self.engine.predict({state_key: text}, questions)
         except Exception as e:
-            logger.exception("Laya predict failed (%s, state_len=%d)", label, len(text))
+            logger.exception("Engine predict failed (%s, state_len=%d)", label, len(text))
             self._record(text, preset, None, started, e)
             raise BridgeError(
-                f"Laya predict failed ({label}, state_len={len(text)})"
+                f"Engine predict failed ({label}, state_len={len(text)})"
             ) from e
         self._record(text, preset, result, started, None)
         return result
@@ -145,6 +142,7 @@ class LayaBridge:
                 result=result if isinstance(result, dict) else None,
                 elapsed_ms=(time.perf_counter() - started) * 1000,
                 error=error,
+                engine_version=self._engine_version,
             )
         except Exception:
             logger.exception("Usage logging failed (state_len=%d)", len(text))

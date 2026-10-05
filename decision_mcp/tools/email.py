@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict, score_level, yes_prob
 from .base import Tool
 
@@ -23,7 +23,7 @@ class EmailOutput(BaseModel):
 
 
 class EmailTool(Tool):
-    name = "laya_email"
+    name = "decision_email"
     description = (
         "Triage an email: owning team (category), urgency, whether it needs a reply, "
         "and whether it is spam or phishing."
@@ -31,7 +31,7 @@ class EmailTool(Tool):
     input_schema = EmailInput
     output_schema = EmailOutput
 
-    async def run(self, bridge: LayaBridge, body: str) -> EmailOutput:
+    async def run(self, bridge: DecisionBridge, body: str) -> EmailOutput:
         raw = bridge.predict(body, preset="email")
         require_dict(raw, self.name)
         category, confidence = choice_of(raw, "category", self.name)  # primary signal

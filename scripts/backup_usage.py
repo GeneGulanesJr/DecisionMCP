@@ -3,7 +3,7 @@
 Uses SQLite's online backup API (WAL-safe, no locks held on the live DB),
 writes a self-contained snapshot to the backup dir, prunes old snapshots
 beyond ``--keep``. Run manually or via the launchd agent
-(``com.gulaneskorp.layamcp-backup``).
+(``com.gulaneskorp.decisionmcp-backup``).
 """
 from __future__ import annotations
 

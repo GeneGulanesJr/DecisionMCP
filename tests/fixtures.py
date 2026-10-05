@@ -1,4 +1,4 @@
-"""Builders for Laya-shaped results (mirrors what ``Router.predict`` returns)."""
+"""Builders for engine-shaped results (the normalized DecisionEngine contract)."""
 from __future__ import annotations
 
 

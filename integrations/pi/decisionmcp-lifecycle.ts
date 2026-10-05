@@ -1,22 +1,22 @@
 /**
- * layamcp-lifecycle — start the LayaMCP server with the first Pi session and
- * close it with the last one. Safe for multiple concurrent Pi instances.
+ * decisionmcp-lifecycle — start the DecisionMCP server with the first Pi session
+ * and close it with the last one. Safe for multiple concurrent Pi instances.
  *
  * How it works
  * ------------
  * - `session_start`: ensure the server is healthy (spawn if not, under a
  *   lockfile so simultaneous Pis spawn exactly one), then register this
- *   session in `<repo>/data/layamcp-refs.json` as {token, pid}.
+ *   session in `<repo>/data/decisionmcp-refs.json` as {token, pid}.
  * - `session_shutdown` + process `exit`: deregister; if no live refs remain,
- *   SIGTERM the server (pid from `data/layamcp.pid`, written only by us) and
+ *   SIGTERM the server (pid from `data/decisionmcp.pid`, written only by us) and
  *   kick a final corpus backup.
  * - Entries whose pid is dead are pruned on every touch, so SIGKILLed Pi
  *   processes cannot leak refs (or keep the server up forever).
  *
- * A server started manually (`layamcp` in a terminal) has no pidfile from us
+ * A server started manually (`decisionmcp` in a terminal) has no pidfile from us
  * and is never killed by this extension.
  *
- * Install: symlink into ~/.pi/agent/extensions/layamcp-lifecycle.ts
+ * Install: symlink into ~/.pi/agent/extensions/decisionmcp-lifecycle.ts
  * (see integrations/pi/README.md).
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -34,14 +34,14 @@ import {
 } from "node:fs";
 
 // --- Where things live (edit if the repo moves) ---------------------------
-const REPO = "/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP";
-const BIN = `${REPO}/.venv/bin/layamcp`;
+const REPO = "/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP";
+const BIN = `${REPO}/.venv/bin/decisionmcp`;
 const PY = `${REPO}/.venv/bin/python`;
 const DATA = `${REPO}/data`;
-const REFS = `${DATA}/layamcp-refs.json`;
-const LOCK = `${DATA}/layamcp-spawn.lock`;
-const PIDF = `${DATA}/layamcp.pid`;
-const LOG = `${DATA}/logs/layamcp.log`;
+const REFS = `${DATA}/decisionmcp-refs.json`;
+const LOCK = `${DATA}/decisionmcp-spawn.lock`;
+const PIDF = `${DATA}/decisionmcp.pid`;
+const LOG = `${DATA}/logs/decisionmcp.log`;
 const HEALTH = "http://127.0.0.1:8765/health";
 // --------------------------------------------------------------------------
 const SPAWN_WAIT_MS = 120_000; // cold model preload can take a while
@@ -205,14 +205,14 @@ function release(token: string): void {
 	}
 }
 
-export default function layamcpLifecycle(pi: ExtensionAPI): void {
+export default function decisionmcpLifecycle(pi: ExtensionAPI): void {
 	const token = randomUUID();
 
 	pi.on("session_start", async (_event, _ctx) => {
 		try {
 			await ensureRunning();
 		} catch (e) {
-			console.error("[layamcp-lifecycle] failed to ensure server:", e);
+			console.error("[decisionmcp-lifecycle] failed to ensure server:", e);
 		}
 		let ok = false;
 		if (acquireLock()) {

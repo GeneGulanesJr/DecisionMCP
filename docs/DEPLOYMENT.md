@@ -3,8 +3,8 @@
 ## Local dev
 
 ```bash
-pip install -e ".[dev]"
-layamcp
+pip install -e ".[dev,laya]"
+decisionmcp
 ```
 
 Runs on `http://127.0.0.1:8765` (default).
@@ -15,13 +15,13 @@ Two ways to run the server on macOS; pick one for the server itself. The
 nightly backup agent is independent of both.
 
 **Mode A — start/stop with Pi (default, active).** The
-[`integrations/pi/layamcp-lifecycle.ts`](../integrations/pi/layamcp-lifecycle.ts)
+[`integrations/pi/decisionmcp-lifecycle.ts`](../integrations/pi/decisionmcp-lifecycle.ts)
 extension starts the server with the first Pi session, shares one instance
 across concurrent Pi sessions (refcount file + lockfile under `data/`), and
 stops it — after a final backup — when the last session closes. Install:
 
 ```bash
-ln -sf "$PWD/integrations/pi/layamcp-lifecycle.ts" ~/.pi/agent/extensions/layamcp-lifecycle.ts
+ln -sf "$PWD/integrations/pi/decisionmcp-lifecycle.ts" ~/.pi/agent/extensions/decisionmcp-lifecycle.ts
 ```
 
 Cold start (first Pi of the day) waits ~10–40 s for model preload; warm starts
@@ -31,14 +31,14 @@ are instant. See `integrations/pi/README.md`.
 
 | Agent | What it does |
 | --- | --- |
-| `com.gulaneskorp.layamcp` | Runs `.venv/bin/layamcp` on login, restarts it if it crashes (`KeepAlive`), logs to `data/logs/layamcp.log` |
+| `com.gulaneskorp.decisionmcp` | Runs `.venv/bin/decisionmcp` on login, restarts it if it crashes (`KeepAlive`), logs to `data/logs/decisionmcp.log` |
 
 ```bash
-cp deploy/launchd/com.gulaneskorp.layamcp.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.layamcp.plist
+cp deploy/launchd/com.gulaneskorp.decisionmcp.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.decisionmcp.plist
 ```
 
-If you later switch to Mode A: `launchctl bootout gui/$(id -u)/com.gulaneskorp.layamcp`
+If you later switch to Mode A: `launchctl bootout gui/$(id -u)/com.gulaneskorp.decisionmcp`
 (KeepAlive would otherwise resurrect the server after the lifecycle extension
 stops it). Running both modes at once is harmless but redundant.
 
@@ -47,36 +47,36 @@ stops it). Running both modes at once is harmless but redundant.
 keeps the last 14; a missing DB (fresh install) is a clean no-op.
 
 ```bash
-cp deploy/launchd/com.gulaneskorp.layamcp-backup.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.layamcp-backup.plist
+cp deploy/launchd/com.gulaneskorp.decisionmcp-backup.plist ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.gulaneskorp.decisionmcp-backup.plist
 ```
 
 Operate:
 
 ```bash
-launchctl kickstart gui/$(id -u)/com.gulaneskorp.layamcp-backup      # backup now
-launchctl print gui/$(id -u)/com.gulaneskorp.layamcp-backup | head   # state
+launchctl kickstart gui/$(id -u)/com.gulaneskorp.decisionmcp-backup      # backup now
+launchctl print gui/$(id -u)/com.gulaneskorp.decisionmcp-backup | head   # state
 ```
 
 Manual backups any time: `.venv/bin/python scripts/backup_usage.py --keep 14`.
 
 ## Linux — systemd
 
-`/etc/systemd/system/layamcp.service`:
+`/etc/systemd/system/decisionmcp.service`:
 
 ```ini
 [Unit]
-Description=LayaMCP server
+Description=DecisionMCP server
 After=network.target
 
 [Service]
 Type=simple
-User=layamcp
-WorkingDirectory=/opt/LayaMCP
-Environment="LAYAMCP_HOST=127.0.0.1"
-Environment="LAYAMCP_PORT=8765"
-Environment="LAYAMCP_LOG_LEVEL=WARNING"
-ExecStart=/opt/LayaMCP/.venv/bin/layamcp
+User=decisionmcp
+WorkingDirectory=/opt/DecisionMCP
+Environment="DECISIONMCP_HOST=127.0.0.1"
+Environment="DECISIONMCP_PORT=8765"
+Environment="DECISIONMCP_LOG_LEVEL=WARNING"
+ExecStart=/opt/DecisionMCP/.venv/bin/decisionmcp
 Restart=on-failure
 RestartSec=5
 
@@ -86,19 +86,19 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now layamcp
-sudo systemctl status layamcp
-sudo journalctl -u layamcp -f    # tail logs
+sudo systemctl enable --now decisionmcp
+sudo systemctl status decisionmcp
+sudo journalctl -u decisionmcp -f    # tail logs
 ```
 
 ## Windows — NSSM (Non-Sucking Service Manager)
 
 ```cmd
-nssm install layamcp "C:\Users\you\LayaMCP\.venv\Scripts\layamcp.exe"
-nssm set layamcp AppDirectory "C:\Users\you\LayaMCP"
-nssm set layamcp AppEnvironmentExtra LAYAMCP_PORT=8765 LAYAMCP_LOG_LEVEL=WARNING
-nssm start layamcp
-nssm status layamcp
+nssm install decisionmcp "C:\Users\you\DecisionMCP\.venv\Scripts\decisionmcp.exe"
+nssm set decisionmcp AppDirectory "C:\Users\you\DecisionMCP"
+nssm set decisionmcp AppEnvironmentExtra DECISIONMCP_PORT=8765 DECISIONMCP_LOG_LEVEL=WARNING
+nssm start decisionmcp
+nssm status decisionmcp
 ```
 
 Or run as a scheduled task that restarts on exit.
@@ -112,13 +112,13 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install Laya + deps. Laya pulls in torch + transformers + huggingface_hub,
-# so this image is large (~2 GB).
+# Install DecisionMCP + the Laya engine. The engine pulls in torch +
+# transformers + huggingface_hub, so this image is large (~2 GB).
 COPY pyproject.toml .
-RUN pip install --no-cache-dir . \
+RUN pip install --no-cache-dir ".[laya]" \
     && pip install "mcp[server]>=1.0"
 
-COPY laya_mcp/ ./laya_mcp/
+COPY decision_mcp/ ./decision_mcp/
 
 # HuggingFace cache — pre-bake model weights here if you want.
 # Otherwise they're downloaded on first run inside the container.
@@ -126,20 +126,20 @@ ENV HF_HOME=/root/.cache/huggingface
 
 EXPOSE 8765
 
-CMD ["python", "-m", "laya_mcp.server"]
+CMD ["python", "-m", "decision_mcp.server"]
 ```
 
 `docker-compose.yml`:
 
 ```yaml
 services:
-  layamcp:
+  decisionmcp:
     build: .
     ports:
       - "127.0.0.1:8765:8765"
     environment:
-      - LAYAMCP_HOST=0.0.0.0
-      - LAYAMCP_LOG_LEVEL=WARNING
+      - DECISIONMCP_HOST=0.0.0.0
+      - DECISIONMCP_LOG_LEVEL=WARNING
     volumes:
       - hf-cache:/root/.cache/huggingface
     restart: unless-stopped
@@ -150,7 +150,7 @@ volumes:
 
 ```bash
 docker compose up -d
-docker compose logs -f layamcp
+docker compose logs -f decisionmcp
 ```
 
 ## Reverse proxy with auth (if exposing externally)
@@ -160,10 +160,10 @@ nginx:
 ```nginx
 server {
     listen 443 ssl;
-    server_name layamcp.example.com;
+    server_name decisionmcp.example.com;
 
-    ssl_certificate /etc/letsencrypt/live/layamcp.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/layamcp.example.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/decisionmcp.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/decisionmcp.example.com/privkey.pem;
 
     # Token-based auth — clients send `Authorization: Bearer <token>`
     # Use a tool like oauth2-proxy or a simple Lua script.
@@ -174,18 +174,18 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
         # Optional: rate limit
-        limit_req zone=layamcp burst=20 nodelay;
+        limit_req zone=decisionmcp burst=20 nodelay;
     }
 }
 
 # Rate limit zone (define at http level)
-# limit_req_zone $binary_remote_addr zone=layamcp:10m rate=10r/s;
+# limit_req_zone $binary_remote_addr zone=decisionmcp:10m rate=10r/s;
 ```
 
 Caddy (simpler):
 
 ```caddy
-layamcp.example.com {
+decisionmcp.example.com {
     reverse_proxy 127.0.0.1:8765
     basicauth {
         admin $2a$14$<bcrypt-hash>
@@ -197,7 +197,7 @@ layamcp.example.com {
 
 ## Health check
 
-The FastAPI app exposes `/health` via the `mcp[server]` SDK:
+The FastAPI app exposes `/health`:
 
 ```bash
 curl http://127.0.0.1:8765/health
@@ -207,10 +207,10 @@ Add to monitoring / load balancer health checks.
 
 ## Logs
 
-Logs go to stdout by default. Configure via `LAYAMCP_LOG_LEVEL`:
+Logs go to stdout by default. Configure via `DECISIONMCP_LOG_LEVEL`:
 
 ```bash
-LAYAMCP_LOG_LEVEL=DEBUG layamcp 2>&1 | tee /var/log/layamcp.log
+DECISIONMCP_LOG_LEVEL=DEBUG decisionmcp 2>&1 | tee /var/log/decisionmcp.log
 ```
 
 For production, send to a log aggregator:
@@ -232,7 +232,8 @@ For production, send to a log aggregator:
 
 ## First-run model download
 
-On first run, Laya downloads model checkpoints from HuggingFace to `~/.cache/huggingface/`. Requires:
+On first run, the Laya engine downloads model checkpoints from HuggingFace to
+the project's `./models` cache. Requires:
 
 - Network access to `huggingface.co`
 - ~2 GB free disk space
@@ -240,9 +241,7 @@ On first run, Laya downloads model checkpoints from HuggingFace to `~/.cache/hug
 If behind a firewall, pre-download:
 
 ```bash
-huggingface-cli download convaiinnovations/laya
-huggingface-cli download convaiinnovations/laya-multilingual
-huggingface-cli download convaiinnovations/laya-typed-decisions
+HF_HUB_CACHE="$PWD/models" huggingface-cli download convaiinnovations/laya
+HF_HUB_CACHE="$PWD/models" huggingface-cli download convaiinnovations/laya-multilingual
+HF_HUB_CACHE="$PWD/models" huggingface-cli download convaiinnovations/laya-typed-decisions
 ```
-
-Then copy `~/.cache/huggingface/` to the target machine.

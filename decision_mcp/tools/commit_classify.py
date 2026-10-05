@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict
 from .base import Tool
 
@@ -64,7 +64,7 @@ class CommitClassifyOutput(BaseModel):
 
 
 class CommitClassifyTool(Tool):
-    name = "laya_commit_classify"
+    name = "decision_commit_classify"
     description = (
         "Classify a commit message: type (feat / fix / refactor / chore / docs / test / "
         "perf / build / ci / revert), scope (api / ui / db / infra / deps / auth / none), "
@@ -73,7 +73,7 @@ class CommitClassifyTool(Tool):
     input_schema = CommitClassifyInput
     output_schema = CommitClassifyOutput
 
-    async def run(self, bridge: LayaBridge, message: str) -> CommitClassifyOutput:
+    async def run(self, bridge: DecisionBridge, message: str) -> CommitClassifyOutput:
         raw = bridge.predict_custom(message, questions=_COMMIT_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
         commit_type, confidence = choice_of(raw, "type", self.name)

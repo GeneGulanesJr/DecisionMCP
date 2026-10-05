@@ -1,11 +1,13 @@
-"""Tool: check for (and optionally apply) Laya library / model updates.
+"""Tool: check for (and optionally apply) decision-engine updates.
 
-``check`` is read-only: it compares the installed ``laya`` package with PyPI,
-the locally cached model commit with the Hugging Face Hub head, and looks for
-Laya models on the Hub that this version doesn't know about.
+Currently the only registered engine is Laya, so this tool upgrades the
+``laya`` package and its model weights: ``check`` compares the installed
+``laya`` package with PyPI, the locally cached model commit with the
+Hugging Face Hub head, and looks for Laya models on the Hub that this
+version doesn't know about.
 
 ``apply`` upgrades the package and re-downloads changed model weights. It runs
-``pip install``, so it is disabled unless ``LAYAMCP_ALLOW_UPDATES=true`` (the
+``pip install``, so it is disabled unless ``DECISIONMCP_ALLOW_UPDATES=true`` (the
 HTTP server has no auth). Nothing takes effect in the running process; the
 server must be restarted.
 """
@@ -26,7 +28,7 @@ from huggingface_hub import HfApi, constants as hf_constants, snapshot_download
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ..config import settings
 from ..errors import ToolError
 from .base import Tool
@@ -40,7 +42,7 @@ class UpdateInput(BaseModel):
         "check",
         description=(
             "'check' reports what is out of date (read-only). 'apply' upgrades laya and "
-            "re-downloads changed models; needs LAYAMCP_ALLOW_UPDATES=true and a restart."
+            "re-downloads changed models; needs DECISIONMCP_ALLOW_UPDATES=true and a restart."
         ),
     )
 
@@ -165,7 +167,7 @@ def _apply(tool: str) -> UpdateOutput:
     if not settings.allow_updates:
         raise ToolError(
             tool,
-            "Updates are disabled. Set LAYAMCP_ALLOW_UPDATES=true and restart to allow 'apply'.",
+            "Updates are disabled. Set DECISIONMCP_ALLOW_UPDATES=true and restart to allow 'apply'.",
         )
     status = _check(tool)
     applied: list[str] = []
@@ -185,15 +187,16 @@ def _apply(tool: str) -> UpdateOutput:
 
 
 class UpdateTool(Tool):
-    name = "laya_update"
+    name = "decision_update"
     description = (
-        "Check whether the Laya library or its models are out of date and whether new Laya "
-        "models exist on the Hugging Face Hub. action='apply' upgrades (opt-in, needs restart)."
+        "Check whether the decision engine (Laya library) or its models are out of date and "
+        "whether new Laya models exist on the Hugging Face Hub. action='apply' upgrades "
+        "(opt-in, needs restart)."
     )
     input_schema = UpdateInput
     output_schema = UpdateOutput
 
-    async def run(self, bridge: LayaBridge, action: str = "check") -> UpdateOutput:
+    async def run(self, bridge: DecisionBridge, action: str = "check") -> UpdateOutput:
         # Network + subprocess work: keep it off the event loop.
         fn = _apply if action == "apply" else _check
         return await asyncio.to_thread(fn, self.name)

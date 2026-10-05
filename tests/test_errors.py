@@ -4,21 +4,22 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from laya_fixtures import choice, noul, result
+from conftest import FakeEngine
+from fixtures import choice, noul, result
 
-from laya_mcp.bridge import LayaBridge
-from laya_mcp.errors import (
+from decision_mcp.bridge import DecisionBridge
+from decision_mcp.errors import (
     BridgeError,
-    LayaMCPError,
+    DecisionMCPError,
     ModelLoadError,
     ToolError,
     UnknownPresetError,
 )
-from laya_mcp.tools.email import EmailTool
-from laya_mcp.tools.guard import GuardTool
-from laya_mcp.tools.moderate import ModerateTool
-from laya_mcp.tools.route import RouteTool
-from laya_mcp.tools.triage import TriageTool
+from decision_mcp.tools.email import EmailTool
+from decision_mcp.tools.guard import GuardTool
+from decision_mcp.tools.moderate import ModerateTool
+from decision_mcp.tools.route import RouteTool
+from decision_mcp.tools.triage import TriageTool
 
 
 # ===========================================================================
@@ -27,19 +28,21 @@ from laya_mcp.tools.triage import TriageTool
 
 
 def test_unknown_preset_raises_typed_error() -> None:
-    """UnknownPresetError is a subclass of BridgeError and LayaMCPError."""
-    bridge = LayaBridge(preload=False)
+    """UnknownPresetError is a subclass of BridgeError and DecisionMCPError."""
+    bridge = DecisionBridge(engine=FakeEngine(), preload=False)
     with pytest.raises(UnknownPresetError) as exc_info:
         bridge.predict("hello", preset="bogus")
     # UnknownPresetError should be catchable as BridgeError too
     assert isinstance(exc_info.value, BridgeError)
-    assert isinstance(exc_info.value, LayaMCPError)
+    assert isinstance(exc_info.value, DecisionMCPError)
 
 
 def test_predict_wraps_upstream_runtime_error() -> None:
-    """Any exception from Laya is wrapped as BridgeError."""
-    bridge = LayaBridge(preload=False)
-    bridge.router = MagicMock(predict=MagicMock(side_effect=RuntimeError("GPU out of memory")))
+    """Any exception from the engine is wrapped as BridgeError."""
+    bridge = DecisionBridge(
+        engine=FakeEngine(), preload=False
+    )
+    bridge.engine.predict = MagicMock(side_effect=RuntimeError("GPU out of memory"))
     with pytest.raises(BridgeError) as exc_info:
         bridge.predict("hello", preset="guard")
     # Original exception is chained
@@ -48,8 +51,8 @@ def test_predict_wraps_upstream_runtime_error() -> None:
 
 
 def test_predict_custom_wraps_upstream_error() -> None:
-    bridge = LayaBridge(preload=False)
-    bridge.router = MagicMock(predict=MagicMock(side_effect=ValueError("bad input")))
+    bridge = DecisionBridge(engine=FakeEngine(), preload=False)
+    bridge.engine.predict = MagicMock(side_effect=ValueError("bad input"))
     with pytest.raises(BridgeError) as exc_info:
         bridge.predict_custom("hello", questions={})
     assert isinstance(exc_info.value.__cause__, ValueError)
@@ -57,21 +60,19 @@ def test_predict_custom_wraps_upstream_error() -> None:
 
 def test_bridge_error_message_never_contains_input() -> None:
     """Log context, not data: the message has the input length, not the input."""
-    bridge = LayaBridge(preload=False)
-    bridge.router = MagicMock(predict=MagicMock(side_effect=RuntimeError("boom")))
+    bridge = DecisionBridge(engine=FakeEngine(), preload=False)
+    bridge.engine.predict = MagicMock(side_effect=RuntimeError("boom"))
     with pytest.raises(BridgeError) as exc_info:
         bridge.predict("super secret prompt", preset="guard")
     assert "super secret prompt" not in str(exc_info.value)
     assert "state_len=19" in str(exc_info.value)
 
 
-def test_model_load_failure_wrapped(monkeypatch: pytest.MonkeyPatch) -> None:
-    def boom(*args, **kwargs):
-        raise OSError("no such checkpoint")
-
-    monkeypatch.setattr("laya_mcp.bridge.Router", boom)
+def test_model_load_failure_wrapped() -> None:
+    """An engine that fails to preload surfaces as ModelLoadError."""
+    engine = FakeEngine(fail_preload=OSError("no such checkpoint"))
     with pytest.raises(ModelLoadError) as exc_info:
-        LayaBridge(preload=True)
+        DecisionBridge(engine=engine, preload=True)
     assert isinstance(exc_info.value.__cause__, OSError)
 
 
@@ -147,8 +148,8 @@ async def test_guard_raises_on_non_numeric_confidence() -> None:
 async def test_guard_propagates_bridge_error() -> None:
     """BridgeError from upstream propagates through the tool unchanged."""
     bridge = MagicMock()
-    bridge.predict.side_effect = BridgeError("upstream Laya failed")
-    with pytest.raises(BridgeError, match="upstream Laya failed"):
+    bridge.predict.side_effect = BridgeError("upstream engine failed")
+    with pytest.raises(BridgeError, match="upstream engine failed"):
         await GuardTool().run(bridge, prompt="test")
 
 
@@ -217,10 +218,12 @@ async def test_route_raises_on_bad_preset() -> None:
 # ===========================================================================
 
 
-def test_all_custom_errors_inherit_from_layamcperror() -> None:
-    """Catch LayaMCPError to handle any project-specific failure."""
+def test_all_custom_errors_inherit_from_decisionmcperror() -> None:
+    """Catch DecisionMCPError to handle any project-specific failure."""
     for cls in [BridgeError, ModelLoadError, UnknownPresetError, ToolError]:
-        assert issubclass(cls, LayaMCPError), f"{cls.__name__} must inherit from LayaMCPError"
+        assert issubclass(cls, DecisionMCPError), (
+            f"{cls.__name__} must inherit from DecisionMCPError"
+        )
 
 
 def test_tool_error_carries_tool_name() -> None:

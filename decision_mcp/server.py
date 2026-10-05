@@ -2,14 +2,14 @@
 
 Run with:
 
-    uvicorn laya_mcp.server:app --host 127.0.0.1 --port 8765
+    uvicorn decision_mcp.server:app --host 127.0.0.1 --port 8765
     # or
-    layamcp           # console script defined in pyproject.toml
+    decisionmcp        # console script defined in pyproject.toml
     # or
-    python -m laya_mcp.server
+    python -m decision_mcp.server
 
 The MCP server is built on top of the official ``mcp[server]`` SDK and
-exposes the registered tools from :mod:`laya_mcp.tools` over HTTP/SSE.
+exposes the registered tools from :mod:`decision_mcp.tools` over HTTP/SSE.
 
 Error handling
 --------------
@@ -18,7 +18,7 @@ Three error categories are handled distinctly:
 
 1. **Unknown tool / invalid input** — protocol-level error returned to
    the caller. Doesn't log a traceback (just the message).
-2. **Tool / bridge error** (any :class:`LayaMCPError`) — the call is
+2. **Tool / bridge error** (any :class:`DecisionMCPError`) — the call is
    returned as MCP content with ``isError=true``. Logged with full
    traceback so operators can debug.
 3. **Unexpected error** (anything else) — returned as a generic MCP
@@ -41,9 +41,9 @@ from pydantic import ValidationError
 from starlette.responses import Response
 from starlette.routing import Mount
 
-from .bridge import LayaBridge
+from .bridge import DecisionBridge
 from .config import settings
-from .errors import LayaMCPError
+from .errors import DecisionMCPError
 from .tools import TOOLS
 from .usage import UsageStore, current_session, current_tool
 
@@ -51,20 +51,20 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Single bridge instance — model loaded once per process.
+# Single bridge instance — engine + weights loaded once per process.
 # ---------------------------------------------------------------------------
 usage_store = (
     UsageStore(settings.data_dir / "usage.db", store_text=settings.usage_store_text)
     if settings.usage_enabled
     else None
 )
-bridge = LayaBridge(preload=settings.preload_models, usage=usage_store)
+bridge = DecisionBridge(preload=settings.preload_models, usage=usage_store)
 
 
 # ---------------------------------------------------------------------------
 # MCP server with dynamic tool registration from the TOOLS registry.
 # ---------------------------------------------------------------------------
-server: Server = Server("layamcp")
+server: Server = Server("decisionmcp")
 
 
 @server.list_tools()
@@ -93,14 +93,14 @@ async def _call_tool(name: str, arguments: dict) -> types.CallToolResult:
         logger.warning("Tool %s got invalid input: %s", name, e)
         return _error_result(f"Invalid input for {name}: {e}")
 
-    # Run the tool. Any LayaMCPError is logged with traceback + returned
+    # Run the tool. Any DecisionMCPError is logged with traceback + returned
     # as MCP error block. Any other exception is treated as a bug —
     # logged with full traceback but a generic message returned.
     current_tool.set(name)  # lets the bridge attribute predictions to this tool
     try:
         result = await tool.run(bridge, **validated.model_dump())
         return _result(result)
-    except LayaMCPError as e:
+    except DecisionMCPError as e:
         logger.error(
             "Tool %s failed (input_keys=%s): %s",
             name,
@@ -145,7 +145,7 @@ def _error_result(message: str) -> types.CallToolResult:
 # ≈ models-resident (per spec §9 + the Phase 4 infra/smoke.sh contract).
 # ---------------------------------------------------------------------------
 sse = SseServerTransport("/messages/")
-app = FastAPI(title="layamcp")
+app = FastAPI(title="decisionmcp")
 
 
 @app.get("/health")
@@ -192,19 +192,20 @@ app.router.routes.append(Mount("/messages/", app=sse.handle_post_message))
 
 
 def main() -> None:
-    """Console-script entry point: ``layamcp``."""
+    """Console-script entry point: ``decisionmcp``."""
     logging.basicConfig(
         level=settings.log_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     logger.info(
-        "Starting LayaMCP on http://%s:%d (tools=%d)",
+        "Starting DecisionMCP on http://%s:%d (engine=%s, tools=%d)",
         settings.host,
         settings.port,
+        bridge.engine.name,
         len(TOOLS),
     )
     uvicorn.run(
-        "laya_mcp.server:app",
+        "decision_mcp.server:app",
         host=settings.host,
         port=settings.port,
         log_level=settings.log_level.lower(),

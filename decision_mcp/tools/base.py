@@ -1,8 +1,8 @@
-"""Base class for all LayaMCP tools.
+"""Base class for all DecisionMCP tools.
 
 Subclass :class:`Tool` to add a new tool. Required attributes:
 
-- ``name`` (str): unique MCP tool name (e.g. ``"laya_guard"``).
+- ``name`` (str): unique MCP tool name (e.g. ``"decision_guard"``).
 - ``description`` (str): one-line description shown to the agent.
 - ``input_schema``: Pydantic model for input arguments.
 - ``output_schema``: Pydantic model for output.
@@ -22,11 +22,11 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from ..bridge import LayaBridge
+    from ..bridge import DecisionBridge
 
 
 class Tool(ABC):
-    """Abstract base for all LayaMCP tools."""
+    """Abstract base for all DecisionMCP tools."""
 
     name: str = ""
     description: str = ""
@@ -34,7 +34,7 @@ class Tool(ABC):
     output_schema: type[BaseModel]
 
     @abstractmethod
-    async def run(self, bridge: "LayaBridge", **kwargs) -> BaseModel:
+    async def run(self, bridge: "DecisionBridge", **kwargs) -> BaseModel:
         """Execute the tool against ``bridge`` and return the output model."""
         raise NotImplementedError
 

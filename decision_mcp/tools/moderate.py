@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import require_dict, yes_prob
 from .base import Tool
 
@@ -21,12 +21,12 @@ class ModerateOutput(BaseModel):
 
 
 class ModerateTool(Tool):
-    name = "laya_moderate"
+    name = "decision_moderate"
     description = "Check text for toxicity, harassment, and threats."
     input_schema = ModerateInput
     output_schema = ModerateOutput
 
-    async def run(self, bridge: LayaBridge, text: str) -> ModerateOutput:
+    async def run(self, bridge: DecisionBridge, text: str) -> ModerateOutput:
         raw = bridge.predict(text, preset="moderate")
         require_dict(raw, self.name)
         probs = [yes_prob(raw, k, self.name) for k in ("toxic", "harassment", "threat")]

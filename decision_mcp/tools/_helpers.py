@@ -1,6 +1,6 @@
-"""Helpers shared across tools for validating and extracting Laya output.
+"""Helpers shared across tools for validating and extracting engine output.
 
-``Router.predict`` returns::
+Every engine returns the normalized decision shape::
 
     {"model": ..., "answers": {<question>: <answer>, ...}, "usage": {...}, "routing": {...}}
 
@@ -31,10 +31,10 @@ def require_dict(raw, tool_name: str) -> dict:
     if not isinstance(raw, dict):
         raise ToolError(
             tool_name,
-            f"Expected dict from Laya, got {type(raw).__name__}: {raw!r}",
+            f"Expected dict from engine, got {type(raw).__name__}: {raw!r}",
         )
     if not raw:
-        raise ToolError(tool_name, "Laya returned an empty result.")
+        raise ToolError(tool_name, "Engine returned an empty result.")
     return raw
 
 
@@ -54,12 +54,12 @@ def extract_answer(raw: dict, key: str, kind: str, tool_name: str) -> dict:
     if not isinstance(answers, dict) or not answers:
         raise ToolError(
             tool_name,
-            f"Missing 'answers' in Laya result. Got keys: {sorted(raw)}",
+            f"Missing 'answers' in engine result. Got keys: {sorted(raw)}",
         )
     if key not in answers:
         raise ToolError(
             tool_name,
-            f"Missing expected key {key!r} in Laya answers. Got keys: {sorted(answers)}",
+            f"Missing expected key {key!r} in engine answers. Got keys: {sorted(answers)}",
         )
     entry = answers[key]
     if not isinstance(entry, dict):

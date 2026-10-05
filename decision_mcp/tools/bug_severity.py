@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict
 from .base import Tool
 
@@ -49,7 +49,7 @@ class BugSeverityOutput(BaseModel):
 
 
 class BugSeverityTool(Tool):
-    name = "laya_bug_severity"
+    name = "decision_bug_severity"
     description = (
         "Classify a bug report's severity (S0_critical / S1_high / S2_medium / S3_low) "
         "and area (frontend / backend / infra / docs / tests / deps / auth / unknown)."
@@ -57,7 +57,7 @@ class BugSeverityTool(Tool):
     input_schema = BugSeverityInput
     output_schema = BugSeverityOutput
 
-    async def run(self, bridge: LayaBridge, text: str) -> BugSeverityOutput:
+    async def run(self, bridge: DecisionBridge, text: str) -> BugSeverityOutput:
         raw = bridge.predict_custom(text, questions=_BUG_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
         severity, confidence = choice_of(raw, "severity", self.name)

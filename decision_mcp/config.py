@@ -1,4 +1,4 @@
-"""Settings for LayaMCP, env-overridable via LAYAMCP_* prefix."""
+"""Settings for DecisionMCP, env-overridable via DECISIONMCP_* prefix."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,12 +12,12 @@ class Settings(BaseSettings):
     """Runtime configuration. Override via env or .env file.
 
     Examples:
-        LAYAMCP_PORT=9000 layamcp
-        LAYAMCP_PRELOAD_MODELS=false layamcp
+        DECISIONMCP_PORT=9000 decisionmcp
+        DECISIONMCP_PRELOAD_MODELS=false decisionmcp
     """
 
     model_config = SettingsConfigDict(
-        env_prefix="LAYAMCP_",
+        env_prefix="DECISIONMCP_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -35,8 +35,8 @@ class Settings(BaseSettings):
     # the exported JSONL usable as (input, answers) training pairs.
     usage_store_text: bool = False
 
-    # Lets the laya_update tool run `pip install -U laya` and refresh model weights.
-    # Off by default because the HTTP server has no auth.
+    # Lets the decision_update tool run `pip install -U laya` and refresh model
+    # weights. Off by default because the HTTP server has no auth.
     allow_updates: bool = False
 
 

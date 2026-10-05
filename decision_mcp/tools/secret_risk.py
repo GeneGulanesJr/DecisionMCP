@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict
 from .base import Tool
 
@@ -50,7 +50,7 @@ class SecretRiskOutput(BaseModel):
 
 
 class SecretRiskTool(Tool):
-    name = "laya_secret_risk"
+    name = "decision_secret_risk"
     description = (
         "Scan text for leaked credentials (API keys, passwords, tokens, certs, SSH keys, "
         "AWS creds). Returns the kind of secret detected and a risk level. "
@@ -60,7 +60,7 @@ class SecretRiskTool(Tool):
     input_schema = SecretRiskInput
     output_schema = SecretRiskOutput
 
-    async def run(self, bridge: LayaBridge, text: str) -> SecretRiskOutput:
+    async def run(self, bridge: DecisionBridge, text: str) -> SecretRiskOutput:
         raw = bridge.predict_custom(text, questions=_SECRET_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
         kind, _ = choice_of(raw, "kind", self.name)
