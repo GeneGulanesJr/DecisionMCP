@@ -53,27 +53,33 @@ fact, not rewritten. New exports carry `engine_version`.
 
 ## 4. Re-register the server in Pi
 
-In `~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per project), rename
-the server entry — the key determines the tool prefix Pi exposes:
+Pi ≥ 1.0 attaches MCP servers through its **built-in client**, which speaks
+streamable HTTP — the legacy `pi-mcp-extension` bridge is no longer needed
+(remove it with `pi remove npm:pi-mcp-extension` if you had it). In
+`~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per project), use the
+built-in format — note the URL moves from the SSE endpoint (`/sse`) to the
+streamable-HTTP endpoint (`/mcp`); the built-in client does not speak
+legacy SSE:
 
 ```json
 {
   "mcpServers": {
     "decisionmcp": {
-      "transport": "sse",
-      "url": "http://127.0.0.1:8765/sse",
-      "lifecycle": "eager",
-      "healthCheckIntervalMs": 60000
+      "url": "http://127.0.0.1:8765/mcp",
+      "description": "Decision-model tools over the Laya engine"
     }
   }
 }
 ```
 
-- Tools are now `mcp_decisionmcp_decision_guard`, `mcp_decisionmcp_decision_route`, …
-  (was `mcp_layamcp_laya_guard`, …).
+- Verify with `pi mcp list` — expect `decisionmcp: connected, 13 tools`.
+- Tools are now `mcp__decisionmcp__decision_guard`,
+  `mcp__decisionmcp__decision_route`, … (was `mcp_layamcp_laya_guard`, …
+  under the old bridge).
 - **Prompts, skills, and agent instructions that name tools must be updated**
   (`laya_guard` → `decision_guard`, `laya_usage` → `decision_usage`, etc.).
-- Start the server with `decisionmcp` before starting Pi, as before.
+- Start the server with `decisionmcp` before starting Pi — or let the
+  lifecycle extension (§5) spawn it on session start.
 
 ## 5. Relink the Pi lifecycle extension
 

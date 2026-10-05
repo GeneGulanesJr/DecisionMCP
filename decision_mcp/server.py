@@ -9,7 +9,13 @@ Run with:
     python -m decision_mcp.server
 
 The MCP server is built on top of the official ``mcp[server]`` SDK and
-exposes the registered tools from :mod:`decision_mcp.tools` over HTTP/SSE.
+exposes the registered tools from :mod:`decision_mcp.tools` over two
+transports on the same port:
+
+- **Streamable HTTP** at ``/mcp`` (POST/GET/DELETE) — what pi's built-in
+  MCP client and current MCP-spec clients speak. This is the primary one.
+- **Legacy SSE** at ``/sse`` + ``/messages/`` — kept for older clients
+  (pi-mcp-extension era).
 
 Error handling
 --------------
@@ -30,6 +36,8 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import uvicorn
@@ -37,9 +45,11 @@ from fastapi import FastAPI, Request
 from mcp import types
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from pydantic import ValidationError
 from starlette.responses import Response
 from starlette.routing import Mount
+from starlette.types import Receive, Scope, Send
 
 from .bridge import DecisionBridge
 from .config import settings
@@ -136,16 +146,34 @@ def _error_result(message: str) -> types.CallToolResult:
 
 
 # ---------------------------------------------------------------------------
-# Plain FastAPI app with MCP SSE transport mounted manually + /health.
+# Plain FastAPI app with both MCP transports mounted manually + /health.
 #
 # Spec §9 / research 2026-09-22: mcp.server.fastapi.create_fastapi_app was
-# removed in mcp 1.x and is broken on every released SDK today. Use the
-# SSE transport directly on a plain FastAPI app. The /health endpoint
+# removed in mcp 1.x and is broken on every released SDK today. Mount the
+# transports directly on a plain FastAPI app. The /health endpoint
 # is auth-exempt so the Docker healthcheck can probe TCP port-open
 # ≈ models-resident (per spec §9 + the Phase 4 infra/smoke.sh contract).
 # ---------------------------------------------------------------------------
 sse = SseServerTransport("/messages/")
-app = FastAPI(title="decisionmcp")
+
+# Streamable HTTP — the transport pi's built-in MCP client speaks (and the
+# current MCP spec default). Stateful: one MCP session per client connection
+# → one usage-log session, mirroring SSE semantics. ``json_response=True``
+# answers POSTs with plain JSON instead of an SSE stream (simpler for
+# clients, curl-debuggable).
+session_manager = StreamableHTTPSessionManager(
+    app=server, json_response=True, stateless=False
+)
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Start/stop the streamable-HTTP session manager with the ASGI lifespan."""
+    async with session_manager.run():
+        yield
+
+
+app = FastAPI(title="decisionmcp", lifespan=_lifespan)
 
 
 @app.get("/health")
@@ -189,6 +217,67 @@ async def sse_endpoint(request: Request) -> Response:
 # MCP client → server POST endpoint (paired with /sse). Mounted as a raw ASGI app,
 # not a FastAPI route: ``handle_post_message`` sends its own 202 response.
 app.router.routes.append(Mount("/messages/", app=sse.handle_post_message))
+
+
+async def _handle_streamable_http(scope: Scope, receive: Receive, send: Send) -> None:
+    """Serve the streamable-HTTP transport on ``/mcp`` (POST/GET/DELETE).
+
+    Usage-log attribution: every request after ``initialize`` carries the
+    ``mcp-session-id`` header → one usage-log session per MCP session. The
+    ``initialize`` POST itself has no header and spawns no tool calls, so it
+    opens no session row. ``DELETE`` (client-side session termination) closes it.
+    """
+    headers = {
+        k.decode("latin-1").lower(): v.decode("latin-1")
+        for k, v in scope.get("headers", [])
+    }
+    session_id = headers.get("mcp-session-id")
+    current_session.set(session_id)
+    if session_id and usage_store is not None:
+        usage_store.open_session(session_id, headers.get("user-agent"))
+    try:
+        await session_manager.handle_request(scope, receive, send)
+    finally:
+        if session_id and usage_store is not None and scope.get("method") == "DELETE":
+            usage_store.close_session(session_id)
+
+
+async def _send_json(send: Send, status: int, body: bytes) -> None:
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode("latin-1")),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+class _StreamableHTTPGuard:
+    """ASGI fallback for anything the real routes didn't match.
+
+    Why not ``Mount("/mcp", ...)``: Starlette 1.7 307-redirects the exact
+    path ``/mcp`` to ``/mcp/`` for real ASGI servers (TestClient masks it),
+    and MCP clients POST to exactly ``/mcp``. So we mount this at ``/``
+    (appended last — real routes win) and route by path: ``/mcp`` (with or
+    without trailing slash) → the transport; anything else that fell through
+    the router → a plain 404, like the router would send.
+    """
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope.get("path", "").rstrip("/") == "/mcp":
+            await _handle_streamable_http(scope, receive, send)
+        elif scope["type"] == "websocket":
+            await send({"type": "websocket.close", "code": 1000})
+        elif scope["type"] == "http":
+            await _send_json(send, 404, b'{"detail":"Not Found"}')
+        # other scopes: nothing sensible to answer
+
+
+app.router.routes.append(Mount("/", app=_StreamableHTTPGuard()))
 
 
 def main() -> None:

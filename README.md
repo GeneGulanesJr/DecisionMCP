@@ -53,50 +53,37 @@ decisionmcp
 DECISIONMCP_PORT=9000 decisionmcp
 ```
 
-The MCP endpoint uses the SSE transport at `http://127.0.0.1:8765/sse` (`GET /health` for a health check).
+The MCP endpoint uses **streamable HTTP** at `http://127.0.0.1:8765/mcp` (POST/GET/DELETE). Legacy SSE clients can still connect at `/sse` (`GET /health` for a health check).
 
 Every prediction is logged to `./data/usage.db` with its MCP session, for training data. Input text is **not** stored unless you set `DECISIONMCP_USAGE_STORE_TEXT=true` (see [docs/CONFIGURATION.md](docs/CONFIGURATION.md)).
 
 ## Configure Pi
 
-Pi (v0.87.x) has no built-in MCP client; it attaches MCP servers through the
-[`pi-mcp-extension`](https://www.npmjs.com/package/pi-mcp-extension) bridge:
-
-```bash
-pi install npm:pi-mcp-extension
-```
-
-Then register this server in `~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per-project):
+Pi (≥ 1.0) has a built-in MCP client — no bridge extension needed. Register
+this server in `~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per-project):
 
 ```json
 {
-  "settings": {
-    "toolPrefix": "mcp",
-    "requestTimeoutMs": 30000,
-    "maxRetries": 5
-  },
   "mcpServers": {
     "decisionmcp": {
-      "transport": "sse",
-      "url": "http://127.0.0.1:8765/sse",
-      "lifecycle": "eager",
-      "healthCheckIntervalMs": 60000
+      "url": "http://127.0.0.1:8765/mcp",
+      "description": "Decision-model tools over the Laya engine: injection guard, model routing, moderation, triage, email classification, and code-review analytics"
     }
   }
 }
 ```
 
-Start the server first (`decisionmcp`), then start Pi — all 13 tools appear as
-`mcp_decisionmcp_<tool>` (e.g. `mcp_decisionmcp_decision_guard`, argument is `prompt`).
-Use `/mcp` inside Pi to check connection status; with `lifecycle: "eager"` Pi
-connects at session start (5 retries), with `"lazy"` you start it manually via
-`/mcp:start`. The server speaks MCP over SSE at `/sse` (`GET /health` for a
-health check).
+Start the server first (`decisionmcp`, or let the bundled lifecycle extension
+spawn it — see [integrations/pi](integrations/pi/README.md)), then run
+`pi mcp list` to verify: it should report `decisionmcp: connected, 13 tools`.
+Tools appear as `mcp__decisionmcp__<tool>` (e.g. `mcp__decisionmcp__decision_guard`,
+argument is `prompt`). Use `/mcp` inside Pi to inspect connections, reconnect,
+or change tool exposure.
 
-> **Migrating from LayaMCP?** Tools were renamed `laya_*` → `decision_*`, so
-> prompts that call `mcp_layamcp_laya_guard` must switch to
-> `mcp_decisionmcp_decision_guard`. See **[docs/MIGRATION.md](docs/MIGRATION.md)**
-> and the [CHANGELOG](CHANGELOG.md).
+> **Migrating from the old `pi-mcp-extension` bridge or LayaMCP-era names?**
+> Tools were renamed `laya_*` → `decision_*`, and the bridge's
+> `mcp_decisionmcp_<tool>` naming became the built-in's `mcp__decisionmcp__<tool>`.
+> See **[docs/MIGRATION.md](docs/MIGRATION.md)** and the [CHANGELOG](CHANGELOG.md).
 
 ## Adding a new engine
 

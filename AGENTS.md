@@ -4,7 +4,7 @@ If you're an AI coding agent (Aider, Cursor, Claude Code, Pi, etc.) working in t
 
 ## What this project is
 
-**DecisionMCP** is an engine-agnostic HTTP MCP server (SSE transport, endpoint `/sse`) that serves decision-model inferences to Pi (and any other MCP client). It ships with the [Laya](https://github.com/NandhaKishorM/laya) engine behind a pluggable `DecisionEngine` protocol, so other engines can be added without touching tools. It exposes **13 tools** at `http://127.0.0.1:8765` by default — 5 engine-preset + 6 coding-specific + 2 maintenance. Model weights live in `./models` (gitignored); usage logs in `./data` (gitignored).
+**DecisionMCP** is an engine-agnostic HTTP MCP server (streamable HTTP at `/mcp`, legacy SSE at `/sse`) that serves decision-model inferences to Pi (and any other MCP client). It ships with the [Laya](https://github.com/NandhaKishorM/laya) engine behind a pluggable `DecisionEngine` protocol, so other engines can be added without touching tools. It exposes **13 tools** at `http://127.0.0.1:8765` by default — 5 engine-preset + 6 coding-specific + 2 maintenance. Model weights live in `./models` (gitignored); usage logs in `./data` (gitignored).
 
 | Tool | Purpose | Source |
 |---|---|---|

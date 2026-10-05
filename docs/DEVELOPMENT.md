@@ -26,7 +26,7 @@ DecisionMCP/
 ├── .env.example
 ├── decision_mcp/
 │   ├── __init__.py
-│   ├── server.py                   # FastAPI + MCP SSE entry
+│   ├── server.py                   # FastAPI + MCP (streamable HTTP /mcp, legacy /sse)
 │   ├── bridge.py                   # DecisionBridge (engine-agnostic)
 │   ├── config.py                   # Settings (pydantic-settings)
 │   ├── errors.py                   # DecisionMCPError hierarchy

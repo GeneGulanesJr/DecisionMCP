@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added: streamable HTTP transport (`/mcp`) — pi's built-in MCP client
+
+The server now serves the current MCP transport, **streamable HTTP**, at
+`/mcp` (POST/GET/DELETE) alongside legacy SSE (`/sse` kept for older
+clients). This is what pi ≥ 1.0's **built-in MCP client** speaks — the
+community `pi-mcp-extension` bridge is no longer needed.
+
+- Pi config: `~/.pi/agent/mcp.json` uses the built-in format —
+  `{"mcpServers": {"decisionmcp": {"url": "http://127.0.0.1:8765/mcp",
+  "description": "…"}}}`. The bridge's `transport`/`lifecycle`/`settings`
+  keys are gone.
+- Tool naming: bridge `mcp_decisionmcp_<tool>` → built-in
+  `mcp__decisionmcp__<tool>`.
+- Usage log: streamable-HTTP requests are attributed via the
+  `mcp-session-id` header — one usage-log session per MCP session;
+  client `DELETE` (session termination) closes it.
+- Starlette 1.7 quirk: `Mount("/mcp")` 307-redirects the exact `/mcp` path
+  under real ASGI servers (TestClient masks it), so the transport is served
+  by a root-mounted fallback guard; `tests/test_server_http.py` covers it.
+- Lifecycle extension: fixed stale `REPO` path (pointed at a
+  never-created `GulanesKorp/DecisionMCP` directory — the rename stayed
+  in-tree), so `decisionmcp-lifecycle.ts` again spawns/stops the server
+  with Pi sessions; relink the extension symlink if you had the old
+  `layamcp-lifecycle.ts` one.
+- Deps: `mcp[server]<2` → `mcp>=1.9,<2` (the `server` extra no longer
+  exists in current SDK releases; no other dependency changes).
+
 ## [0.2.0] - 2026-10-05
 
 ### Breaking: DecisionMCP — the server is now engine-agnostic

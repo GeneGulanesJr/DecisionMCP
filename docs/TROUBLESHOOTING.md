@@ -33,7 +33,7 @@ pip install -e ".[laya]"
 The MCP SDK isn't installed:
 
 ```bash
-pip install "mcp[server]>=1.0"
+pip install "mcp>=1.9,<2"
 ```
 
 ### Model fails to download on first run
@@ -53,7 +53,7 @@ HF_HUB_CACHE="$PWD/models" huggingface-cli download convaiinnovations/laya-typed
 
 ### `ImportError` inside `decision_mcp/server.py`
 
-The `mcp[server]` SDK API may have changed between versions. Check your installed version:
+The `mcp` SDK API may have changed between versions. Check your installed version:
 
 ```bash
 pip show mcp
@@ -125,24 +125,34 @@ Should return `{"status": "ok", "tools": 13}`.
 
 ### Check Pi's MCP config
 
+`~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per project) — pi ≥ 1.0's
+built-in client speaks streamable HTTP (the legacy `pi-mcp-extension`
+bridge is gone; its `transport`/`lifecycle` keys are not valid here):
+
 ```json
 {
   "mcpServers": {
     "decisionmcp": {
-      "transport": "sse",
-      "url": "http://127.0.0.1:8765/sse",
-      "lifecycle": "eager",
-      "healthCheckIntervalMs": 60000
+      "url": "http://127.0.0.1:8765/mcp",
+      "description": "Decision-model tools over the Laya engine"
     }
   }
 }
 ```
 
 Common mistakes:
-- Still registered under the old `layamcp` key — rename the entry; Pi exposes tools as `mcp_decisionmcp_<tool>` now
+- Still registered under the old `layamcp` key, or still pointing at the
+  SSE endpoint (`/sse`) — the built-in client needs `/mcp` and rejects SSE
+- Still running the removed `pi-mcp-extension` (delete it with
+  `pi remove npm:pi-mcp-extension`) — it collides with the built-in `/mcp`
 - Wrong port
-- URL must point at the SSE endpoint (`/sse`), reachable from Pi's environment
-- Trailing slash in URL (`8765/sse/`) — both usually work but check
+- Config not picked up — run `/reload` inside Pi, or restart the session
+
+Then verify outside Pi:
+
+```bash
+pi mcp list   # expect: decisionmcp: connected, 13 tools
+```
 
 ### Check the firewall
 

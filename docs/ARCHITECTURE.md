@@ -13,10 +13,13 @@
 ┌──────────────────────────────────────────────┐
 │  FastAPI app  (decision_mcp.server:app)      │
 │  ┌────────────────────────────────────────┐  │
-│  │  GET /sse  (MCP over SSE)             │  │
+│  │  POST/GET/DELETE /mcp  (streamable     │  │
+│  │  HTTP — pi's built-in client, current  │  │
+│  │  MCP spec)                             │  │
 │  │  - initialize                        │  │
 │  │  - tools/list                        │  │
 │  │  - tools/call                        │  │
+│  │  GET /sse  (legacy MCP over SSE)      │  │
 │  └────────────────────────────────────────┘  │
 └────────────────┬─────────────────────────────┘
                  │
@@ -114,7 +117,8 @@
 
 ## Data flow per tool call
 
-1. **Pi** opens an SSE connection and sends a `tools/call` JSON-RPC request → FastAPI route.
+1. **Pi** POSTs a `tools/call` JSON-RPC request to `/mcp` (streamable HTTP;
+   the legacy `/sse` endpoint behaves equivalently) → FastAPI route.
 2. **Server** dispatches to `Tool.run(bridge, **arguments)`.
 3. **Tool** calls `bridge.predict(state, preset)` or `bridge.predict_custom(state, questions)`.
 4. **Bridge** looks up the preset (or uses the custom questions) and forwards

@@ -34,7 +34,7 @@ import {
 } from "node:fs";
 
 // --- Where things live (edit if the repo moves) ---------------------------
-const REPO = "/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP";
+const REPO = "/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP";
 const BIN = `${REPO}/.venv/bin/decisionmcp`;
 const PY = `${REPO}/.venv/bin/python`;
 const DATA = `${REPO}/data`;

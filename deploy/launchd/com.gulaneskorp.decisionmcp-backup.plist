@@ -6,13 +6,13 @@
     <string>com.gulaneskorp.decisionmcp-backup</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP/.venv/bin/python</string>
+        <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP/.venv/bin/python</string>
         <string>scripts/backup_usage.py</string>
         <string>--keep</string>
         <string>14</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP</string>
+    <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP</string>
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
@@ -21,8 +21,8 @@
         <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
-    <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP/data/logs/backup.log</string>
+    <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP/data/logs/backup.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP/data/logs/backup.log</string>
+    <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP/data/logs/backup.log</string>
 </dict>
 </plist>

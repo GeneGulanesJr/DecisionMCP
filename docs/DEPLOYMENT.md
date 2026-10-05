@@ -116,7 +116,7 @@ WORKDIR /app
 # transformers + huggingface_hub, so this image is large (~2 GB).
 COPY pyproject.toml .
 RUN pip install --no-cache-dir ".[laya]" \
-    && pip install "mcp[server]>=1.0"
+    && pip install "mcp>=1.9,<2"
 
 COPY decision_mcp/ ./decision_mcp/
 
