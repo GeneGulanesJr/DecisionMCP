@@ -212,6 +212,7 @@ Use the actual shape to update the parser in the tool file.
 - `docs/ARCHITECTURE.md` — full layer diagram, data flow, performance notes
 - `docs/TOOLS.md` — per-tool behavior, when to use, limitations
 - `docs/CONFIGURATION.md` — every env var, .env file format, prod checklist
+- `docs/MIGRATION.md` — upgrading an existing LayaMCP v0.1.x install (v0.2.0 renames)
 - `docs/DEVELOPMENT.md` — adding tools & engines, code style, release checklist
 - `docs/DEPLOYMENT.md` — systemd, Docker, nginx reverse proxy
 - `docs/TROUBLESHOOTING.md` — common errors and fixes

@@ -95,7 +95,8 @@ health check).
 
 > **Migrating from LayaMCP?** Tools were renamed `laya_*` → `decision_*`, so
 > prompts that call `mcp_layamcp_laya_guard` must switch to
-> `mcp_decisionmcp_decision_guard`. See the [CHANGELOG](CHANGELOG.md).
+> `mcp_decisionmcp_decision_guard`. See **[docs/MIGRATION.md](docs/MIGRATION.md)**
+> and the [CHANGELOG](CHANGELOG.md).
 
 ## Adding a new engine
 

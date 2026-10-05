@@ -10,7 +10,8 @@ LayaMCP is renamed **DecisionMCP** so decision tools are no longer coupled to
 the Laya library. Laya moves behind a pluggable engine contract; Laya itself
 remains the default engine.
 
-**Migration guide:**
+**Migration guide:** step-by-step instructions live in
+[docs/MIGRATION.md](docs/MIGRATION.md). Summary:
 
 - Package: `laya_mcp` → `decision_mcp`; console script `layamcp` → `decisionmcp`.
 - Env vars: `LAYAMCP_*` → `DECISIONMCP_*` (rename them in `.env` and any
