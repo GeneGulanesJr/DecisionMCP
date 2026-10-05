@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict
 from .base import Tool
 
@@ -51,7 +51,7 @@ class TestPriorityOutput(BaseModel):
 
 
 class TestPriorityTool(Tool):
-    name = "laya_test_priority"
+    name = "decision_test_priority"
     description = (
         "Classify a test's run priority (skip / low / medium / high / critical) and the "
         "reason (covers_new_code / covers_bug_fix / covers_regression / smoke_test / "
@@ -60,7 +60,7 @@ class TestPriorityTool(Tool):
     input_schema = TestPriorityInput
     output_schema = TestPriorityOutput
 
-    async def run(self, bridge: LayaBridge, description: str) -> TestPriorityOutput:
+    async def run(self, bridge: DecisionBridge, description: str) -> TestPriorityOutput:
         raw = bridge.predict_custom(description, questions=_TEST_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
         priority, confidence = choice_of(raw, "priority", self.name)

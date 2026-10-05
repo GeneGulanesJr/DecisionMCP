@@ -1,8 +1,8 @@
 """Session + usage log (SQLite) for collecting training data.
 
-Laya ships hooks (``run_id``, token usage, timing per call) but persists
-nothing, so LayaMCP records every prediction itself. One row per call in
-``calls``; one row per MCP connection in ``sessions``.
+Decision engines carry per-call metadata (``run_id``, token usage, timing)
+but persist nothing, so DecisionMCP records every prediction itself. One row
+per call in ``calls``; one row per MCP connection in ``sessions``.
 
 Privacy: input text is stored only when ``store_text`` is on, and never for
 tools in :data:`NEVER_STORE_TEXT` (their inputs are secrets by definition).
@@ -17,27 +17,17 @@ import threading
 import time
 import uuid
 from contextvars import ContextVar
-from importlib.metadata import PackageNotFoundError
-from importlib.metadata import version as _metadata_version
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-
-def _laya_version() -> str | None:
-    """Installed ``laya`` lib version — label provenance for every row."""
-    try:
-        return _metadata_version("laya")
-    except PackageNotFoundError:
-        return None
-
 # Set by the server around each request so the bridge can attribute a
 # prediction to the MCP tool and connection that caused it.
-current_tool: ContextVar[str | None] = ContextVar("layamcp_current_tool", default=None)
-current_session: ContextVar[str | None] = ContextVar("layamcp_current_session", default=None)
+current_tool: ContextVar[str | None] = ContextVar("decisionmcp_current_tool", default=None)
+current_session: ContextVar[str | None] = ContextVar("decisionmcp_current_session", default=None)
 
-NEVER_STORE_TEXT = frozenset({"laya_secret_risk"})
+NEVER_STORE_TEXT = frozenset({"decision_secret_risk"})
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -47,22 +37,22 @@ CREATE TABLE IF NOT EXISTS sessions (
     client     TEXT
 );
 CREATE TABLE IF NOT EXISTS calls (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id       TEXT NOT NULL,
-    ts           REAL NOT NULL,
-    session_id   TEXT,
-    tool         TEXT,
-    preset       TEXT,
-    model        TEXT,
-    status       TEXT NOT NULL,
-    error        TEXT,
-    elapsed_ms   REAL,
-    input_chars  INTEGER NOT NULL,
-    input_tokens INTEGER,
-    answers      TEXT,
-    routing      TEXT,
-    input_text   TEXT,
-    laya_version TEXT
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id         TEXT NOT NULL,
+    ts             REAL NOT NULL,
+    session_id     TEXT,
+    tool           TEXT,
+    preset         TEXT,
+    model          TEXT,
+    status         TEXT NOT NULL,
+    error          TEXT,
+    elapsed_ms     REAL,
+    input_chars    INTEGER NOT NULL,
+    input_tokens   INTEGER,
+    answers        TEXT,
+    routing        TEXT,
+    input_text     TEXT,
+    engine_version TEXT
 );
 CREATE INDEX IF NOT EXISTS calls_ts ON calls(ts);
 CREATE INDEX IF NOT EXISTS calls_tool ON calls(tool);
@@ -76,7 +66,6 @@ class UsageStore:
     def __init__(self, path: Path, *, store_text: bool = False) -> None:
         self.path = Path(path)
         self.store_text = store_text
-        self.laya_version = _laya_version()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._db = sqlite3.connect(self.path, check_same_thread=False)
@@ -88,10 +77,16 @@ class UsageStore:
             self._db.commit()
 
     def _migrate(self) -> None:
-        """In-place, additive migrations for DBs created by older versions."""
+        """In-place migrations for DBs created by older versions."""
         cols = {r["name"] for r in self._db.execute("PRAGMA table_info(calls)")}
-        if "laya_version" not in cols:
-            self._db.execute("ALTER TABLE calls ADD COLUMN laya_version TEXT")
+        if "engine_version" not in cols:
+            if "laya_version" in cols:
+                # Pre-agnostic column name (LayaMCP era); data carries over.
+                self._db.execute(
+                    "ALTER TABLE calls RENAME COLUMN laya_version TO engine_version"
+                )
+            else:
+                self._db.execute("ALTER TABLE calls ADD COLUMN engine_version TEXT")
 
     # ------------------------------------------------------------------
     # Writes
@@ -121,10 +116,12 @@ class UsageStore:
         result: dict | None,
         elapsed_ms: float,
         error: BaseException | None = None,
+        engine_version: str | None = None,
     ) -> str:
         """Log one prediction. Returns the generated ``run_id``.
 
-        ``tool`` and ``session_id`` come from the request context vars.
+        ``tool`` and ``session_id`` come from the request context vars;
+        ``engine_version`` comes from the bridge (provenance per row).
         """
         tool = current_tool.get()
         run_id = uuid.uuid4().hex
@@ -135,7 +132,8 @@ class UsageStore:
         with self._lock:
             self._db.execute(
                 "INSERT INTO calls(run_id, ts, session_id, tool, preset, model, status, error,"
-                " elapsed_ms, input_chars, input_tokens, answers, routing, input_text, laya_version)"
+                " elapsed_ms, input_chars, input_tokens, answers, routing, input_text,"
+                " engine_version)"
                 " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     run_id,
@@ -152,7 +150,7 @@ class UsageStore:
                     json.dumps(result.get("answers")) if result.get("answers") else None,
                     json.dumps(routing) if routing else None,
                     text if keep_text else None,
-                    self.laya_version,
+                    engine_version,
                 ),
             )
             self._db.commit()
@@ -179,8 +177,8 @@ class UsageStore:
             by_model = self._db.execute(
                 f"SELECT COALESCE(model, '?') m, COUNT(*) n FROM calls {where} GROUP BY m", args
             ).fetchall()
-            by_laya_version = self._db.execute(
-                f"SELECT COALESCE(laya_version, 'unknown') v, COUNT(*) n FROM calls {where}"
+            by_engine_version = self._db.execute(
+                f"SELECT COALESCE(engine_version, 'unknown') v, COUNT(*) n FROM calls {where}"
                 " GROUP BY v ORDER BY n DESC",
                 args,
             ).fetchall()
@@ -195,7 +193,7 @@ class UsageStore:
             "rows_with_text": total["with_text"] or 0,
             "by_tool": {r["t"]: r["n"] for r in by_tool},
             "by_model": {r["m"]: r["n"] for r in by_model},
-            "by_laya_version": {r["v"]: r["n"] for r in by_laya_version},
+            "by_engine_version": {r["v"]: r["n"] for r in by_engine_version},
             "store_text": self.store_text,
             "db_path": str(self.path),
         }
@@ -205,7 +203,7 @@ class UsageStore:
     ) -> int:
         """Write successful calls as JSONL and return the row count.
 
-        Each line: ``{run_id, ts, session_id, tool, preset, model, input, answers}``.
+        Each line: ``{run_id, ts, session_id, tool, preset, model, engine_version, input, answers}``.
         ``input`` is ``null`` unless text storage was on when the call was made.
         With ``labeled_only=True`` only rows that carry input text are written —
         i.e. ready (text, answers) training pairs.
@@ -230,7 +228,7 @@ class UsageStore:
                             "tool": r["tool"],
                             "preset": r["preset"],
                             "model": r["model"],
-                            "laya_version": r["laya_version"],
+                            "engine_version": r["engine_version"],
                             "input": r["input_text"],
                             "answers": json.loads(r["answers"]) if r["answers"] else None,
                         },

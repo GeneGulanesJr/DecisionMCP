@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict, score_level, yes_prob
 from .base import Tool
 
@@ -23,7 +23,7 @@ class TriageOutput(BaseModel):
 
 
 class TriageTool(Tool):
-    name = "laya_triage"
+    name = "decision_triage"
     description = (
         "Classify a support ticket's intent, urgency, churn risk, refund request, "
         "and frustration level."
@@ -31,7 +31,7 @@ class TriageTool(Tool):
     input_schema = TriageInput
     output_schema = TriageOutput
 
-    async def run(self, bridge: LayaBridge, text: str) -> TriageOutput:
+    async def run(self, bridge: DecisionBridge, text: str) -> TriageOutput:
         raw = bridge.predict(text, preset="triage")
         require_dict(raw, self.name)
         intent, confidence = choice_of(raw, "intent", self.name)  # primary signal

@@ -1,23 +1,23 @@
-"""Custom exceptions for LayaMCP.
+"""Custom exceptions for DecisionMCP.
 
-All exceptions inherit from :class:`LayaMCPError` so the server can catch
+All exceptions inherit from :class:`DecisionMCPError` so the server can catch
 one base class and turn any project-specific failure into an MCP error
 response — without leaking internals to the caller.
 """
 from __future__ import annotations
 
 
-class LayaMCPError(Exception):
-    """Base class for all LayaMCP-specific errors."""
+class DecisionMCPError(Exception):
+    """Base class for all DecisionMCP-specific errors."""
 
 
 # ---------------------------------------------------------------------------
-# Bridge errors — upstream Laya library failed
+# Bridge errors — the active decision engine failed
 # ---------------------------------------------------------------------------
 
 
-class BridgeError(LayaMCPError):
-    """A call into the Laya library failed.
+class BridgeError(DecisionMCPError):
+    """A call into the decision engine failed.
 
     The original exception is attached via ``__cause__`` for traceback
     chaining. The ``message`` includes enough context (which preset,
@@ -28,13 +28,13 @@ class BridgeError(LayaMCPError):
 class ModelLoadError(BridgeError):
     """Failed to load model weights (download, OOM, missing checkpoint, etc.).
 
-    Raised at :class:`laya_mcp.bridge.LayaBridge` construction time if
-    ``preload=True``.
+    Raised at :class:`decision_mcp.bridge.DecisionBridge` construction time
+    if ``preload=True``.
     """
 
 
 class UnknownPresetError(BridgeError):
-    """A tool requested a preset name that's not in :attr:`LayaBridge.PRESETS`."""
+    """A tool requested a preset name that's not in :attr:`DecisionBridge.presets`."""
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ class UnknownPresetError(BridgeError):
 # ---------------------------------------------------------------------------
 
 
-class ToolError(LayaMCPError):
+class ToolError(DecisionMCPError):
     """A tool failed to parse or execute.
 
     Attributes:
@@ -67,5 +67,5 @@ class ToolError(LayaMCPError):
 # ---------------------------------------------------------------------------
 
 
-class ServerError(LayaMCPError):
+class ServerError(DecisionMCPError):
     """Generic server-level error (used for unknown-tool, malformed request)."""

@@ -1,4 +1,4 @@
-"""Tests for all LayaMCP tools.
+"""Tests for all DecisionMCP tools.
 
 Tests use mocked bridges (no model loading). Fast — no GPU needed.
 """
@@ -7,10 +7,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from laya_fixtures import DIFFICULTY, EMAIL_URGENCY, FRUSTRATION, choice, noul, result, score
+from fixtures import DIFFICULTY, EMAIL_URGENCY, FRUSTRATION, choice, noul, result, score
 
-from laya_mcp.tools import TOOLS
-from laya_mcp.tools import (
+from decision_mcp.tools import TOOLS
+from decision_mcp.tools import (
     bug_severity,
     commit_classify,
     diff_intent,
@@ -18,17 +18,17 @@ from laya_mcp.tools import (
     secret_risk,
     test_priority,
 )
-from laya_mcp.tools.bug_severity import BugSeverityTool
-from laya_mcp.tools.commit_classify import CommitClassifyTool
-from laya_mcp.tools.diff_intent import DiffIntentTool
-from laya_mcp.tools.email import EmailTool
-from laya_mcp.tools.guard import GuardTool
-from laya_mcp.tools.moderate import ModerateTool
-from laya_mcp.tools.review_tone import ReviewToneTool
-from laya_mcp.tools.route import RouteTool
-from laya_mcp.tools.secret_risk import SecretRiskTool
-from laya_mcp.tools.test_priority import TestPriorityTool
-from laya_mcp.tools.triage import TriageTool
+from decision_mcp.tools.bug_severity import BugSeverityTool
+from decision_mcp.tools.commit_classify import CommitClassifyTool
+from decision_mcp.tools.diff_intent import DiffIntentTool
+from decision_mcp.tools.email import EmailTool
+from decision_mcp.tools.guard import GuardTool
+from decision_mcp.tools.moderate import ModerateTool
+from decision_mcp.tools.review_tone import ReviewToneTool
+from decision_mcp.tools.route import RouteTool
+from decision_mcp.tools.secret_risk import SecretRiskTool
+from decision_mcp.tools.test_priority import TestPriorityTool
+from decision_mcp.tools.triage import TriageTool
 
 
 # ===========================================================================

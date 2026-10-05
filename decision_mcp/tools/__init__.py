@@ -2,7 +2,7 @@
 
 To add a new tool:
 
-1. Create ``laya_mcp/tools/mytool.py`` with a class extending :class:`Tool`.
+1. Create ``decision_mcp/tools/mytool.py`` with a class extending :class:`Tool`.
 2. Add an import + entry below.
 
 That's the only edit needed — schemas, routes, and dispatch all derive
@@ -23,7 +23,7 @@ from .triage import TriageTool
 from .update import UpdateTool
 from .usage_report import UsageTool
 
-# Tools backed by upstream Laya presets.
+# Tools backed by engine presets (Laya upstream).
 _PRESET_TOOLS: list[Tool] = [
     GuardTool(),
     RouteTool(),
@@ -32,7 +32,7 @@ _PRESET_TOOLS: list[Tool] = [
     EmailTool(),
 ]
 
-# Tools backed by custom Laya question schemas (coding-specific).
+# Tools backed by custom question schemas (coding-specific).
 _CUSTOM_TOOLS: list[Tool] = [
     ReviewToneTool(),
     BugSeverityTool(),

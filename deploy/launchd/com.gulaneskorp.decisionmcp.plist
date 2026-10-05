@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.gulaneskorp.layamcp</string>
+    <string>com.gulaneskorp.decisionmcp</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP/.venv/bin/layamcp</string>
+        <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP/.venv/bin/decisionmcp</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP</string>
+    <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -17,8 +17,8 @@
     <key>ProcessType</key>
     <string>Background</string>
     <key>StandardOutPath</key>
-    <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP/data/logs/layamcp.log</string>
+    <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP/data/logs/decisionmcp.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/genejrgulanes/Documents/GulanesKorp/LayaMCP/data/logs/layamcp.log</string>
+    <string>/Users/genejrgulanes/Documents/GulanesKorp/DecisionMCP/data/logs/decisionmcp.log</string>
 </dict>
 </plist>

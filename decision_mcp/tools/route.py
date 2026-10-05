@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import bin_mass, require_dict
 from .base import Tool
 
@@ -22,12 +22,12 @@ class RouteOutput(BaseModel):
 
 
 class RouteTool(Tool):
-    name = "laya_route"
+    name = "decision_route"
     description = "Decide whether a prompt needs a small/cheap model or a frontier/smart model."
     input_schema = RouteInput
     output_schema = RouteOutput
 
-    async def run(self, bridge: LayaBridge, prompt: str) -> RouteOutput:
+    async def run(self, bridge: DecisionBridge, prompt: str) -> RouteOutput:
         raw = bridge.predict(prompt, preset="route")
         require_dict(raw, self.name)
         # Frontier when the model puts most of its mass on "moderate" or "hard".

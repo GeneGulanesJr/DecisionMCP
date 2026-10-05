@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import require_dict, yes_prob
 from .base import Tool
 
@@ -19,12 +19,12 @@ class GuardOutput(BaseModel):
 
 
 class GuardTool(Tool):
-    name = "laya_guard"
+    name = "decision_guard"
     description = "Check whether a prompt contains injection or jailbreak attempts. Returns is_injection + confidence."
     input_schema = GuardInput
     output_schema = GuardOutput
 
-    async def run(self, bridge: LayaBridge, prompt: str) -> GuardOutput:
+    async def run(self, bridge: DecisionBridge, prompt: str) -> GuardOutput:
         raw = bridge.predict(prompt, preset="guard")
         require_dict(raw, self.name)
         # Flag if either attack question says yes; confidence is in whichever verdict we return.

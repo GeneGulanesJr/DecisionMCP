@@ -1,4 +1,8 @@
-"""LayaMCP — HTTP MCP server wrapping the Laya decision engine."""
+"""DecisionMCP — engine-agnostic MCP server for decision-model inference.
+
+Ships with the Laya engine (``decision_mcp.engines.laya.LayaEngine``); any
+backend implementing ``decision_mcp.engines.base.DecisionEngine`` plugs in.
+"""
 from __future__ import annotations
 
 import os
@@ -10,4 +14,4 @@ from pathlib import Path
 if "HF_HUB_CACHE" not in os.environ and "HF_HOME" not in os.environ:
     os.environ["HF_HUB_CACHE"] = str(Path(__file__).resolve().parent.parent / "models")
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

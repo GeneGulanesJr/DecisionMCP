@@ -1,6 +1,6 @@
 """Tool: code review comment tone classifier.
 
-Uses a custom Laya question schema (not from upstream presets) to
+Uses a custom question schema (not from the engine's presets) to
 classify review comments along two dimensions:
 
 - tone: nit / suggestion / blocking / praise / question / off_topic
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict
 from .base import Tool
 
@@ -53,7 +53,7 @@ class ReviewToneOutput(BaseModel):
 
 
 class ReviewToneTool(Tool):
-    name = "laya_review_tone"
+    name = "decision_review_tone"
     description = (
         "Classify a code review comment's tone (nit / suggestion / blocking / "
         "praise / question / off-topic) and priority (low / medium / high)."
@@ -61,7 +61,7 @@ class ReviewToneTool(Tool):
     input_schema = ReviewToneInput
     output_schema = ReviewToneOutput
 
-    async def run(self, bridge: LayaBridge, comment: str) -> ReviewToneOutput:
+    async def run(self, bridge: DecisionBridge, comment: str) -> ReviewToneOutput:
         raw = bridge.predict_custom(comment, questions=_REVIEW_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
         tone, confidence = choice_of(raw, "tone", self.name)

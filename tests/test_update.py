@@ -1,4 +1,4 @@
-"""Tests for the laya_update tool. Network, pip and downloads are all mocked."""
+"""Tests for the decision_update tool. Network, pip and downloads are all mocked."""
 from __future__ import annotations
 
 from types import SimpleNamespace
@@ -6,16 +6,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from laya_mcp.errors import ToolError
-from laya_mcp.tools import update
-from laya_mcp.tools.update import UpdateTool
+from decision_mcp.errors import ToolError
+from decision_mcp.tools import update
+from decision_mcp.tools.update import UpdateTool
 
 REPO = "convaiinnovations/laya"
+_KNOWN_REPOS = {"convaiinnovations/laya", "convaiinnovations/laya-multilingual", "convaiinnovations/laya-typed-decisions"}
 
 
 @pytest.fixture
 def hub(monkeypatch: pytest.MonkeyPatch, tmp_path):
-    """Fake PyPI + Hub + cache. Defaults: everything up to date."""
+    """Fake PyPI + Hub + engine model registry. Defaults: everything up to date."""
     state = SimpleNamespace(
         installed="0.3.21",
         latest="0.3.21",
@@ -32,6 +33,16 @@ def hub(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setattr(update.metadata, "version", lambda name: state.installed)
     monkeypatch.setattr(update, "_latest_laya", lambda tool: state.latest)
     monkeypatch.setattr(update, "_cached_commit", lambda repo: state.cached)
+    # _known_models lazily imports the installed laya; fake its registry view.
+    monkeypatch.setattr(
+        update,
+        "_known_models",
+        lambda: (
+            {"convaiinnovations/laya": ["english", "multilingual", "typed-decisions"]},
+            set(_KNOWN_REPOS),
+            {"multilingual", "typed-decisions"},
+        ),
+    )
     api = MagicMock()
     api.model_info.side_effect = lambda repo: SimpleNamespace(sha=state.remote)
     api.list_repo_files.side_effect = lambda repo: state.files
@@ -98,7 +109,7 @@ def test_latest_laya_raises_when_pypi_unreachable(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(update.urllib.request, "urlopen", boom)
     with pytest.raises(ToolError, match="PyPI"):
-        update._latest_laya("laya_update")
+        update._latest_laya("decision_update")
 
 
 @pytest.mark.asyncio
@@ -106,7 +117,7 @@ async def test_apply_refused_unless_enabled(hub, monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(update.settings, "allow_updates", False)
     install = MagicMock()
     monkeypatch.setattr(update, "_install_laya", install)
-    with pytest.raises(ToolError, match="LAYAMCP_ALLOW_UPDATES"):
+    with pytest.raises(ToolError, match="DECISIONMCP_ALLOW_UPDATES"):
         await UpdateTool().run(None, action="apply")
     install.assert_not_called()
 
@@ -137,11 +148,20 @@ async def test_apply_when_up_to_date_does_nothing(hub, monkeypatch: pytest.Monke
     assert out.applied == [] and out.restart_required is False
 
 
+def test_known_models_from_installed_laya() -> None:
+    """The real registry view (gated: needs the laya extra installed)."""
+    pytest.importorskip("laya")
+    by_repo, all_repos, subfolders = update._known_models()
+    assert by_repo["convaiinnovations/laya"] == ["english", "multilingual", "typed-decisions"]
+    assert "convaiinnovations/laya-multilingual" in all_repos
+    assert "multilingual" in subfolders
+
+
 def test_install_laya_reports_pip_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     proc = SimpleNamespace(returncode=1, stderr="no matching distribution")
     monkeypatch.setattr(update.subprocess, "run", lambda *a, **k: proc)
     with pytest.raises(ToolError, match="no matching distribution"):
-        update._install_laya("laya_update")
+        update._install_laya("decision_update")
 
 
 def test_install_laya_only_ever_installs_laya(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -152,5 +172,5 @@ def test_install_laya_only_ever_installs_laya(monkeypatch: pytest.MonkeyPatch) -
         return SimpleNamespace(returncode=0, stderr="")
 
     monkeypatch.setattr(update.subprocess, "run", fake_run)
-    update._install_laya("laya_update")
+    update._install_laya("decision_update")
     assert seen["cmd"][-2:] == ["--upgrade", "laya"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..bridge import LayaBridge
+from ..bridge import DecisionBridge
 from ._helpers import choice_of, require_dict
 from .base import Tool
 
@@ -59,7 +59,7 @@ class DiffIntentOutput(BaseModel):
 
 
 class DiffIntentTool(Tool):
-    name = "laya_diff_intent"
+    name = "decision_diff_intent"
     description = (
         "Classify a PR diff: intent (add_feature / fix_bug / refactor / perf / docs / "
         "test / build / chore / revert), scope (single_file / module / cross_cutting), "
@@ -68,7 +68,7 @@ class DiffIntentTool(Tool):
     input_schema = DiffIntentInput
     output_schema = DiffIntentOutput
 
-    async def run(self, bridge: LayaBridge, diff: str) -> DiffIntentOutput:
+    async def run(self, bridge: DecisionBridge, diff: str) -> DiffIntentOutput:
         raw = bridge.predict_custom(diff, questions=_DIFF_QUESTIONS, state_key=_STATE_KEY)
         require_dict(raw, self.name)
         intent, confidence = choice_of(raw, "intent", self.name)
