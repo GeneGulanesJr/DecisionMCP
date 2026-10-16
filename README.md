@@ -79,7 +79,7 @@ this server in `~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per-project):
   "mcpServers": {
     "decisionmcp": {
       "url": "http://127.0.0.1:8765/mcp",
-      "description": "Decision-model tools over the Laya engine: injection guard, model routing, moderation, triage, email classification, and code-review analytics"
+      "description": "Decision-model tools: injection guard, model routing, moderation, triage, email classification, and code-review analytics"
     }
   }
 }
@@ -91,11 +91,6 @@ spawn it — see [integrations/pi](integrations/pi/README.md)), then run
 Tools appear as `mcp__decisionmcp__<tool>` (e.g. `mcp__decisionmcp__decision_guard`,
 argument is `prompt`). Use `/mcp` inside Pi to inspect connections, reconnect,
 or change tool exposure.
-
-> **Migrating from the old `pi-mcp-extension` bridge or LayaMCP-era names?**
-> Tools were renamed `laya_*` → `decision_*`, and the bridge's
-> `mcp_decisionmcp_<tool>` naming became the built-in's `mcp__decisionmcp__<tool>`.
-> See **[docs/MIGRATION.md](docs/MIGRATION.md)** and the [CHANGELOG](CHANGELOG.md).
 
 ## Adding a new engine
 
