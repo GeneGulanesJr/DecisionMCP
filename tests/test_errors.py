@@ -218,6 +218,23 @@ async def test_route_raises_on_bad_preset() -> None:
 # ===========================================================================
 
 
+def test_choice_prob_reads_any_label_and_validates() -> None:
+    from decision_mcp.tools._helpers import choice_prob
+
+    raw = result(kind=choice("a", 0.7, probs={"a": 0.7, "b": 0.3}))
+    assert choice_prob(raw, "kind", "b", "t") == pytest.approx(0.3)
+    with pytest.raises(ToolError, match="Missing label 'c'"):
+        choice_prob(raw, "kind", "c", "t")
+    raw["answers"]["kind"]["probabilities"] = {"a": "high"}
+    with pytest.raises(ToolError, match="not numeric"):
+        choice_prob(raw, "kind", "a", "t")
+    del raw["answers"]["kind"]["probabilities"]
+    with pytest.raises(ToolError, match="probabilities"):
+        choice_prob(raw, "kind", "a", "t")
+    with pytest.raises(ToolError, match="'choice' answer"):
+        choice_prob(result(kind=noul(0.9)), "kind", "a", "t")
+
+
 def test_all_custom_errors_inherit_from_decisionmcperror() -> None:
     """Catch DecisionMCPError to handle any project-specific failure."""
     for cls in [BridgeError, ModelLoadError, UnknownPresetError, ToolError]:

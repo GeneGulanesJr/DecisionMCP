@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 
-def choice(label: str, conf: float = 0.9) -> dict:
+def choice(label: str, conf: float = 0.9, probs: dict[str, float] | None = None) -> dict:
     return {
         "type": "choice",
         "choice": label,
-        "probabilities": {label: conf},
+        "probabilities": probs if probs is not None else {label: conf},
         "confidence": conf,
         "answer_confidence": conf,
     }

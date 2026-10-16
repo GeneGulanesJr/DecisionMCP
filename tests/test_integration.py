@@ -82,3 +82,30 @@ async def test_custom_tools_real(bridge) -> None:
     assert secret.kind == "aws_creds"
     none = await _tool("decision_secret_risk").run(bridge, text="just normal text without any secrets")
     assert (none.kind, none.risk) == ("none", "none")
+
+
+@pytest.mark.asyncio
+async def test_road_report_real(bridge) -> None:
+    tool = _tool("decision_road_report")
+    crash = await tool.run(bridge, text="Two lanes blocked, bus hit a car", reported_type="crash")
+    assert crash.hazard == "crash" and crash.matches_reported_type is True
+    assert crash.suggestion == "confirm"
+    spam = await tool.run(bridge, text="Buy cheap load here! Text 0917 for promo", reported_type="flood")
+    assert spam.suggestion == "dismiss"
+    other = await tool.run(bridge, text="Stalled bus on the middle lane", reported_type="flood")
+    assert other.matches_reported_type is False and other.suggestion == "verify"
+    # a short note that names no hazard itself but fits the tapped type
+    short = await tool.run(bridge, text="Knee-deep near UST", reported_type="flood")
+    assert short.matches_reported_type is True and short.hazard == "flood"
+
+
+@pytest.mark.asyncio
+async def test_advisory_real(bridge) -> None:
+    tool = _tool("decision_advisory")
+    closed = await tool.run(
+        bridge, text="Ayala Bridge is CLOSED to all vehicles until further notice."
+    )
+    assert closed.is_road_advisory is True and closed.effect == "close"
+    greeting = await tool.run(bridge, text="Merry Christmas to everyone from the whole agency!")
+    assert greeting.is_road_advisory is False and greeting.effect == "none"
+

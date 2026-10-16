@@ -72,7 +72,7 @@ legacy SSE:
 }
 ```
 
-- Verify with `pi mcp list` — expect `decisionmcp: connected, 13 tools`.
+- Verify with `pi mcp list` — expect `decisionmcp: connected, 15 tools` (13 at v0.2.0; two road tools were added later).
 - Tools are now `mcp__decisionmcp__decision_guard`,
   `mcp__decisionmcp__decision_route`, … (was `mcp_layamcp_laya_guard`, …
   under the old bridge).

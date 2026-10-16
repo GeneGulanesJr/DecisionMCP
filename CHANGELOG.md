@@ -2,6 +2,75 @@
 
 ## [Unreleased]
 
+### Added: d1-omni engine (`DECISIONMCP_ENGINE=d1-omni`) — d1-omni-600M on MLX
+
+- `DECISIONMCP_ENGINE=d1-omni` serves
+  [LiquidAI/d1-omni-600M-MLX-8bit](https://huggingface.co/LiquidAI/d1-omni-600M-MLX-8bit)
+  (0.73 GB, 8-bit) on Apple Silicon through `mlx-vlm>=0.7.8` (the first
+  PyPI release with d1 support). Install the new `d1-omni` extra
+  (`pip install -e ".[d1-omni]"`).
+- `decision_mcp/engines/d1_omni.py` reuses the d1 engine's five presets and
+  rewrites mlx-vlm's answer shape (`bool` / `value` / `metadata`) into the
+  one the tool parsers read (`noul` / `choice` / `score`, `legend`,
+  `answer_confidence`). `preload()` runs one warm-up question so the first
+  tool call doesn't pay MLX's ~3 s first-pass cost. The result's `model`
+  is the model ID, not the local snapshot path.
+- `tests/test_d1_omni_engine.py` covers it with a fake `mlx_vlm.predict`
+  (no mlx needed). Checked on an M4: all 13 inference tools on the real
+  model (70–400 ms each, preload ~4 s), and the HTTP server over MCP.
+
+### Added: d1 engine (`DECISIONMCP_ENGINE=d1`) — LiquidAI d1-3B via transformers
+
+A second decision engine behind the same `DecisionEngine` protocol and the
+same 15 tools:
+
+- `DECISIONMCP_ENGINE=d1` (default stays `laya`) selects
+  [LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B), a 3.1B multimodal
+  decision model post-trained on the Decision Index schema (`noul` /
+  `choice` / `score` — the question types the tool parsers expect). Loaded
+  with `transformers>=5.14` + `trust_remote_code`; install the new `d1`
+  extra (`pip install -e ".[d1]"`).
+- `decision_mcp/engines/d1.py` normalizes d1's answers (the checkpoint omits
+  `answer_confidence`, which the strict tool parsers require) and ships the
+  five engine presets with the question names the preset tools parse, so
+  every preset tool works unchanged.
+- Engines are now registered in `decision_mcp/engines/__init__.py`
+  (`ENGINES` + `build_engine()`); the server reads `DECISIONMCP_ENGINE`
+  instead of hard-coding the default. Unknown names fail at startup with
+  the valid list.
+- `tests/test_d1_engine.py` covers the adapter end-to-end (registry,
+  normalization, guard/route tools) with a `FakeD1Model` — no
+  torch/transformers needed.
+
+### Added: road and traffic tools for KAirOS (`decision_road_report`, `decision_advisory`)
+
+Two custom-question tools, 15 tools in total:
+
+- `decision_road_report` triages a road-user report note (English, Tagalog
+  or Taglish): hazard, whether it matches the type the user tapped,
+  severity, P(road blocked), P(spam) and a `confirm` / `verify` / `dismiss`
+  suggestion derived in code from documented cut-offs. The model reads only
+  the note; the tapped type is checked through one extra question.
+- `decision_advisory` classifies a public agency post: road advisory or not,
+  kind, and the routing-rule type it maps to (`close` / `restrict` /
+  `divert` / `weight` / `none`).
+- Measured with the stock Laya 0.3.21 checkpoints on notes and posts we
+  wrote for testing: reliable on English, weaker on Taglish, not usable on
+  Tagalog (no Tagalog test note got the right suggestion; three real flood
+  notes were suggested for dismissal). Numbers and limits are in
+  `docs/TOOLS.md`. Treat `suggestion` as an ordering hint for a human queue.
+- New helper `choice_prob` (`tools/_helpers.py`): probability of any label
+  of a `choice` answer, validated like the other helpers.
+- Opt-in integration tests for both tools in `tests/test_integration.py`.
+
+### Added: opt-in browser access (`DECISIONMCP_CORS_ORIGINS`)
+
+A comma-separated list of exact origins whose pages may speak streamable
+HTTP to `/mcp` from JavaScript (CORS). Empty by default: the server then
+sends no CORS headers and no web page can call it. Wildcards are refused
+at start-up because the server has no auth. The `mcp-session-id` response
+header is exposed to page scripts. See `docs/CONFIGURATION.md`.
+
 ### Added: streamable HTTP transport (`/mcp`) — pi's built-in MCP client
 
 The server now serves the current MCP transport, **streamable HTTP**, at

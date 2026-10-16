@@ -28,7 +28,7 @@
 │  Tool registry  (decision_mcp.tools.TOOLS)   │
 │  • GuardTool        • ReviewToneTool         │
 │  • RouteTool        • BugSeverityTool        │
-│  • TriageTool       • ... (13 total)         │
+│  • TriageTool       • ... (15 total)         │
 └────────────────┬─────────────────────────────┘
                  │
                  ▼
