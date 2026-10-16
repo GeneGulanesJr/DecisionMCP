@@ -1,10 +1,10 @@
 # DecisionMCP
 
-Engine-agnostic HTTP MCP server for decision-model inferences, for use with [Pi](https://pi.dev) (and any other MCP client). Ships with the [Laya](https://github.com/NandhaKishorM/laya) decision engine behind a pluggable `DecisionEngine` protocol — other engines plug in without touching tools.
+Engine-agnostic HTTP MCP server for decision-model inferences, for use with [Pi](https://pi.dev) (and any other MCP client). Two decision engines ship behind a pluggable `DecisionEngine` protocol — [Laya](https://github.com/NandhaKishorM/laya) (default) and [LiquidAI d1-3B](https://huggingface.co/LiquidAI/d1-3B), picked with `DECISIONMCP_ENGINE` — other engines plug in without touching tools.
 
 ## What it does
 
-Exposes 13 tools to your agent — 5 engine-preset, 6 coding-specific (custom question schemas) and 2 maintenance tools:
+Exposes 15 tools to your agent — 5 engine-preset, 6 coding-specific and 2 road-and-traffic tools (custom question schemas), and 2 maintenance tools:
 
 | Tool                  | Purpose                                              | Latency  | Source     |
 | --------------------- | ---------------------------------------------------- | -------- | ---------- |
@@ -19,8 +19,12 @@ Exposes 13 tools to your agent — 5 engine-preset, 6 coding-specific (custom qu
 | `decision_test_priority`| Test run priority + reason                            | ~33 ms   | custom     |
 | `decision_secret_risk`| Detect leaked credentials in text                    | ~33 ms   | custom     |
 | `decision_diff_intent`| PR diff intent / scope / risk                         | ~33 ms   | custom     |
+| `decision_road_report`| Road-user report note: hazard, severity, blocked, spam → confirm / verify / dismiss | ~0.6 s (5 questions, Apple M4) | custom |
+| `decision_advisory`   | Agency post: road advisory? kind, routing effect (close / restrict / divert / weight) | ~0.5 s (3 questions, Apple M4) | custom |
 | `decision_update`     | Check for a newer engine release / model weights / new models (opt-in `apply`) | —        | admin      |
 | `decision_usage`      | Usage + session stats, JSONL export for training      | —        | admin      |
+
+The two road tools were built for KAirOS (road-user reports and agency advisories in Metro Manila) and take English, Tagalog and Taglish text. With the stock Laya checkpoints they are reliable on English, weaker on Taglish and not usable on Tagalog; measured numbers and limits are in [docs/TOOLS.md](docs/TOOLS.md#decision_road_report).
 
 With the default Laya engine, inference runs in-process over its encoder checkpoints (ModernBERT-large / mmBERT-base). One HTTP endpoint, single engine load per process.
 
@@ -31,6 +35,7 @@ cd DecisionMCP
 uv venv .venv && source .venv/bin/activate     # or python -m venv
 uv pip install -e ".[dev]"                     # or pip install -e ".[dev]"
 uv pip install -e ".[dev,laya]"                # + the Laya engine (heavy: torch)
+uv pip install -e ".[dev,d1]"                  # or: the d1 engine (LiquidAI d1-3B, transformers>=5.14)
 ```
 
 ### Models
@@ -43,6 +48,8 @@ HF_HUB_CACHE="$PWD/models" python -c "from laya import Router; Router().preload(
 
 Keep them current with the `decision_update` tool (see [docs/TOOLS.md](docs/TOOLS.md#decision_update)).
 
+With `DECISIONMCP_ENGINE=d1`, the [d1-3B](https://huggingface.co/LiquidAI/d1-3B) checkpoint is downloaded through the same Hugging Face cache (so it also lands in `./models`) on first start; `decision_update` does not manage it — update by re-pulling the repo or pinning a revision.
+
 ## Run
 
 ```bash
@@ -51,6 +58,7 @@ decisionmcp
 
 # Or override via env:
 DECISIONMCP_PORT=9000 decisionmcp
+DECISIONMCP_ENGINE=d1 decisionmcp             # serve LiquidAI d1-3B instead of Laya
 ```
 
 The MCP endpoint uses **streamable HTTP** at `http://127.0.0.1:8765/mcp` (POST/GET/DELETE). Legacy SSE clients can still connect at `/sse` (`GET /health` for a health check).
@@ -75,7 +83,7 @@ this server in `~/.pi/agent/mcp.json` (global) or `.pi/mcp.json` (per-project):
 
 Start the server first (`decisionmcp`, or let the bundled lifecycle extension
 spawn it — see [integrations/pi](integrations/pi/README.md)), then run
-`pi mcp list` to verify: it should report `decisionmcp: connected, 13 tools`.
+`pi mcp list` to verify: it should report `decisionmcp: connected, 15 tools`.
 Tools appear as `mcp__decisionmcp__<tool>` (e.g. `mcp__decisionmcp__decision_guard`,
 argument is `prompt`). Use `/mcp` inside Pi to inspect connections, reconnect,
 or change tool exposure.
@@ -87,7 +95,7 @@ or change tool exposure.
 
 ## Adding a new engine
 
-Implement the `DecisionEngine` protocol (`preload`, `version`, `presets`, `predict`) in `decision_mcp/engines/myengine.py`, export it, and pass it to `DecisionBridge(engine=MyEngine(), ...)` in `server.py`. All 13 tools — including the custom-question ones — work unchanged on any engine that speaks the normalized answer shape. Details in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#adding-a-new-engine).
+Implement the `DecisionEngine` protocol (`preload`, `version`, `presets`, `predict`) in `decision_mcp/engines/myengine.py`, export it, and pass it to `DecisionBridge(engine=MyEngine(), ...)` in `server.py`. All 15 tools — including the custom-question ones — work unchanged on any engine that speaks the normalized answer shape. Details in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#adding-a-new-engine).
 
 ## Documentation
 

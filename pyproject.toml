@@ -1,6 +1,6 @@
 [project]
 name = "decisionmcp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Engine-agnostic HTTP MCP server for decision-model inference (default engine: Laya), for Pi and other MCP clients."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,6 +24,15 @@ dependencies = [
 # Heavy default engine (pulls torch/transformers). Only needed to actually
 # serve; the mocked test suite and tool development run without it.
 laya = ["laya>=0.3.21"]
+# Alternative engine: LiquidAI d1-3B served directly through transformers
+# (https://huggingface.co/LiquidAI/d1-3B). Requires transformers>=5.14 for
+# the checkpoint's shipped modeling code (trust_remote_code).
+d1 = [
+    "transformers>=5.14",
+    "torch>=2.4",
+    "torchvision>=0.19",
+    "pillow>=10",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

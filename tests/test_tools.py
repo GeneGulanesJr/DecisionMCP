@@ -10,14 +10,18 @@ import pytest
 from fixtures import DIFFICULTY, EMAIL_URGENCY, FRUSTRATION, choice, noul, result, score
 
 from decision_mcp.tools import TOOLS
+from decision_mcp.errors import ToolError
 from decision_mcp.tools import (
+    advisory,
     bug_severity,
     commit_classify,
     diff_intent,
     review_tone,
+    road_report,
     secret_risk,
     test_priority,
 )
+from decision_mcp.tools.advisory import AdvisoryInput, AdvisoryTool
 from decision_mcp.tools.bug_severity import BugSeverityTool
 from decision_mcp.tools.commit_classify import CommitClassifyTool
 from decision_mcp.tools.diff_intent import DiffIntentTool
@@ -25,6 +29,7 @@ from decision_mcp.tools.email import EmailTool
 from decision_mcp.tools.guard import GuardTool
 from decision_mcp.tools.moderate import ModerateTool
 from decision_mcp.tools.review_tone import ReviewToneTool
+from decision_mcp.tools.road_report import RoadReportInput, RoadReportTool
 from decision_mcp.tools.route import RouteTool
 from decision_mcp.tools.secret_risk import SecretRiskTool
 from decision_mcp.tools.test_priority import TestPriorityTool
@@ -36,8 +41,8 @@ from decision_mcp.tools.triage import TriageTool
 # ===========================================================================
 
 
-def test_registry_has_thirteen_tools() -> None:
-    assert len(TOOLS) == 13
+def test_registry_has_fifteen_tools() -> None:
+    assert len(TOOLS) == 15
 
 
 def test_all_tool_names_unique() -> None:
@@ -344,6 +349,284 @@ async def test_diff_intent_cross_cutting_refactor_high_risk() -> None:
 
 
 # ===========================================================================
+# Road and traffic custom-question tools (2)
+# ===========================================================================
+
+
+def _road(
+    hazard: str = "crash",
+    hazard_conf: float = 0.9,
+    level: str = "B",
+    blocked: float = 0.8,
+    spam: float = 0.02,
+    fits: float | None = 0.1,
+) -> dict:
+    """An engine result for the road-report questions.
+
+    ``fits`` is the answer to the extra question asked when a ``reported_type``
+    is given; ``None`` leaves it out (a call without a tapped type).
+    """
+    answers = dict(
+        hazard=choice(hazard, hazard_conf),
+        severity=choice(level),
+        blocks_road=noul(blocked),
+        message_kind=choice(
+            "not_road" if spam >= 0.5 else "road_report",
+            max(spam, 1.0 - spam),
+            probs={"road_report": 1.0 - spam, "not_road": spam},
+        ),
+    )
+    if fits is not None:
+        answers["fits_reported_type"] = noul(fits)
+    return result(**answers)
+
+
+@pytest.mark.asyncio
+async def test_road_report_confirm_when_note_matches_tapped_type() -> None:
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road("crash", 0.93, level="C", blocked=0.9, fits=0.95)
+    out = await RoadReportTool().run(
+        bridge, text="Two lanes blocked, bus hit a car", reported_type="crash", road="EDSA"
+    )
+    assert out.hazard == "crash"
+    assert out.hazard_from_note == "crash"
+    assert out.matches_reported_type is True
+    assert out.fits_reported_type == pytest.approx(0.95)
+    assert out.severity == "high"
+    assert out.blocks_road == pytest.approx(0.9)
+    assert out.spam == pytest.approx(0.02)
+    assert out.suggestion == "confirm"
+    assert out.confidence == pytest.approx(0.93)
+
+
+@pytest.mark.asyncio
+async def test_road_report_state_is_the_note_only() -> None:
+    """The road and the depth never reach the engine; the tapped type only adds a question."""
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road("flood")
+    await RoadReportTool().run(
+        bridge,
+        text="Knee-deep near UST",
+        reported_type="flood",
+        road="España Blvd",
+        depth="not passable to light vehicles",
+    )
+    bridge.predict.assert_not_called()
+    bridge.predict_custom.assert_called_once_with(
+        "Knee-deep near UST",
+        questions={
+            **road_report._ROAD_REPORT_QUESTIONS,
+            "fits_reported_type": road_report._FIT_QUESTIONS["flood"],
+        },
+        state_key=road_report._STATE_KEY,
+    )
+
+    bridge.reset_mock()
+    bridge.predict_custom.return_value = _road("flood", fits=None)
+    await RoadReportTool().run(bridge, text="Knee-deep near UST")
+    bridge.predict_custom.assert_called_once_with(
+        "Knee-deep near UST",
+        questions=road_report._ROAD_REPORT_QUESTIONS,
+        state_key=road_report._STATE_KEY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_road_report_verify_when_note_names_another_hazard() -> None:
+    """A confident, different hazard wins even if the fit question says yes."""
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road("stalled", 0.9, fits=0.9)
+    out = await RoadReportTool().run(bridge, text="Bus broke down", reported_type="crash")
+    assert out.hazard == "stalled"
+    assert out.matches_reported_type is False
+    assert out.suggestion == "verify"
+
+
+@pytest.mark.asyncio
+async def test_road_report_short_note_matches_through_the_tapped_type() -> None:
+    """'Knee-deep near UST' names no hazard alone but fits a flood report."""
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road("other", 0.42, fits=0.82)
+    out = await RoadReportTool().run(bridge, text="Knee-deep near UST", reported_type="flood")
+    assert out.hazard_from_note == "other"
+    assert out.hazard == "flood"
+    assert out.matches_reported_type is True
+    assert out.confidence == pytest.approx(0.82)
+    assert out.suggestion == "confirm"
+
+    # consistent, but not clearly enough to put it at the front of the queue
+    bridge.predict_custom.return_value = _road("other", 0.42, fits=0.6)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="flood")
+    assert out.matches_reported_type is True and out.hazard == "flood"
+    assert out.suggestion == "verify"
+
+    # not consistent with the tapped type
+    bridge.predict_custom.return_value = _road("other", 0.42, fits=0.4)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="flood")
+    assert out.matches_reported_type is False and out.hazard == "other"
+    assert out.suggestion == "verify"
+
+    # an unsure guess at another type does not block the match
+    bridge.predict_custom.return_value = _road("stalled", 0.3, fits=0.8)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="crash")
+    assert out.matches_reported_type is True and out.hazard == "crash"
+
+    # spam never matches through the tapped type
+    bridge.predict_custom.return_value = _road("other", 0.42, fits=0.9, spam=0.6)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="flood")
+    assert out.matches_reported_type is False
+
+
+@pytest.mark.asyncio
+async def test_road_report_dismiss_needs_both_questions_to_agree() -> None:
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road("not_a_report", 0.95, level="A", blocked=0.05, spam=0.97)
+    out = await RoadReportTool().run(bridge, text="lol first", reported_type="crash")
+    assert out.suggestion == "dismiss"
+    assert out.spam == pytest.approx(0.97)
+
+    # spam question says spam, hazard question still sees a crash → a person looks at it
+    bridge.predict_custom.return_value = _road("crash", 0.8, spam=0.7)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="crash")
+    assert out.suggestion == "verify"
+
+    # hazard question says not a report, spam question is unsure → a person looks at it
+    bridge.predict_custom.return_value = _road("not_a_report", 0.6, spam=0.3)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="crash")
+    assert out.suggestion == "verify"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"hazard": "other"},  # a road problem outside the six report types
+        {"hazard_conf": 0.4},  # hazard answer not confident enough
+        {"spam": 0.3},  # not clearly a road report
+    ],
+)
+async def test_road_report_verify_cases(kwargs) -> None:
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road(**kwargs)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="crash")
+    assert out.suggestion == "verify"
+
+
+@pytest.mark.asyncio
+async def test_road_report_without_reported_type() -> None:
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road("flood", 0.88, level="A", blocked=0.1, fits=None)
+    out = await RoadReportTool().run(bridge, text="Gutter-deep water, still passable")
+    assert out.matches_reported_type is None
+    assert out.fits_reported_type is None
+    assert out.hazard == out.hazard_from_note == "flood"
+    assert out.suggestion == "confirm"
+    assert out.severity == "low"
+
+
+@pytest.mark.asyncio
+async def test_road_report_severity_floors() -> None:
+    bridge = MagicMock()
+    # a blocked lane is at least medium
+    bridge.predict_custom.return_value = _road("stalled", level="A", blocked=0.7)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="stalled")
+    assert out.severity == "medium"
+    # a floor never lowers the model's answer
+    bridge.predict_custom.return_value = _road("stalled", level="C", blocked=0.7)
+    out = await RoadReportTool().run(bridge, text="...", reported_type="stalled")
+    assert out.severity == "high"
+    # a flood depth that stops vehicles is high, whatever the note says
+    bridge.predict_custom.return_value = _road("flood", level="A", blocked=0.1)
+    for depth in ("no-light", "not passable to light vehicles", "Not passable", "impassable"):
+        out = await RoadReportTool().run(bridge, text="...", reported_type="flood", depth=depth)
+        assert out.severity == "high", depth
+    for depth in ("passable", "Passable to all vehicles", "", None):
+        out = await RoadReportTool().run(bridge, text="...", reported_type="flood", depth=depth)
+        assert out.severity == "low", depth
+
+
+@pytest.mark.asyncio
+async def test_road_report_rejects_unknown_severity_label() -> None:
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road(level="medium")
+    with pytest.raises(ToolError):
+        await RoadReportTool().run(bridge, text="...")
+
+
+@pytest.mark.asyncio
+async def test_road_report_requires_spam_probability() -> None:
+    bridge = MagicMock()
+    raw = _road()
+    raw["answers"]["message_kind"]["probabilities"] = {"road_report": 0.9}
+    bridge.predict_custom.return_value = raw
+    with pytest.raises(ToolError):
+        await RoadReportTool().run(bridge, text="...")
+
+
+@pytest.mark.asyncio
+async def test_road_report_requires_fit_answer_when_type_is_given() -> None:
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _road(fits=None)
+    with pytest.raises(ToolError, match="fits_reported_type"):
+        await RoadReportTool().run(bridge, text="...", reported_type="crash")
+
+
+def test_road_report_fit_questions_cover_every_type() -> None:
+    assert set(road_report._FIT_QUESTIONS) == set(road_report.REPORT_TYPES)
+    for kind, q in road_report._FIT_QUESTIONS.items():
+        assert q["type"] == "noul", kind
+        assert f"`{road_report._STATE_KEY}`" in q["instructions"], kind
+        assert set(q["criteria"]) == {"true", "false"}, kind
+
+
+def test_road_report_input_validation() -> None:
+    assert RoadReportInput(text="baha", reported_type="flood").reported_type == "flood"
+    for bad in ({"text": ""}, {"text": "   "}, {"text": "x", "reported_type": "meteor"}):
+        with pytest.raises(ValueError):
+            RoadReportInput(**bad)
+    with pytest.raises(ValueError):
+        AdvisoryInput(text=" ")
+
+
+def _advisory(scope: str, p_road: float, kind: str, effect: str, confs=(0.9, 0.8, 0.7)) -> dict:
+    return result(
+        scope=choice(scope, confs[0], probs={"road_advisory": p_road, "not_road": 1.0 - p_road}),
+        kind=choice(kind, confs[1]),
+        effect=choice(effect, confs[2]),
+    )
+
+
+@pytest.mark.asyncio
+async def test_advisory_road_closure() -> None:
+    bridge = MagicMock()
+    bridge.predict_custom.return_value = _advisory("road_advisory", 0.97, "roadwork", "close")
+    out = await AdvisoryTool().run(bridge, text="Kamuning Flyover closed for retrofitting.")
+    assert out.is_road_advisory is True
+    assert out.p_road_advisory == pytest.approx(0.97)
+    assert out.kind == "roadwork"
+    assert out.effect == "close"
+    assert out.confidence == pytest.approx(0.7)  # weakest of the three answers
+    bridge.predict.assert_not_called()
+    bridge.predict_custom.assert_called_once_with(
+        "Kamuning Flyover closed for retrofitting.",
+        questions=advisory._ADVISORY_QUESTIONS,
+        state_key=advisory._STATE_KEY,
+    )
+
+
+@pytest.mark.asyncio
+async def test_advisory_non_road_post_maps_to_no_rule() -> None:
+    bridge = MagicMock()
+    # the effect question answered "divert", but the post is not about roads
+    bridge.predict_custom.return_value = _advisory("not_road", 0.04, "weather", "divert")
+    out = await AdvisoryTool().run(bridge, text="Thunderstorm Advisory No. 5 ...")
+    assert out.is_road_advisory is False
+    assert out.p_road_advisory == pytest.approx(0.04)
+    assert out.kind == "weather"
+    assert out.effect == "none"
+
+
+# ===========================================================================
 # Custom-question tools use bridge.predict_custom (not bridge.predict)
 # ===========================================================================
 
@@ -384,7 +667,15 @@ async def test_custom_tools_use_predict_custom_not_predict(
     )
 
 
-@pytest.mark.parametrize("module,tool,questions_attr,key_attr", _CUSTOM)
+# Road tools have their own run() tests above (their answers need specific labels),
+# but their question sets obey the same rules.
+_ROAD = [
+    (road_report, RoadReportTool, "_ROAD_REPORT_QUESTIONS", "_STATE_KEY"),
+    (advisory, AdvisoryTool, "_ADVISORY_QUESTIONS", "_STATE_KEY"),
+]
+
+
+@pytest.mark.parametrize("module,tool,questions_attr,key_attr", _CUSTOM + _ROAD)
 def test_custom_questions_are_wellformed(module, tool, questions_attr, key_attr) -> None:
     """Each question is a valid typed question that refers to the input by its state key."""
     questions = getattr(module, questions_attr)
@@ -397,3 +688,5 @@ def test_custom_questions_are_wellformed(module, tool, questions_attr, key_attr)
             assert len(q["criteria"]) >= 2, name
         if q["type"] == "score":
             assert isinstance(q["criteria"], list) and len(q["criteria"]) >= 2, name
+        if q["type"] == "noul" and "criteria" in q:
+            assert set(q["criteria"]) == {"true", "false"}, name

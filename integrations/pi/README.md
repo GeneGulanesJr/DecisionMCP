@@ -34,7 +34,7 @@ rm -f ~/.pi/agent/extensions/layamcp-lifecycle.ts
 }
 ```
 
-Verify with `pi mcp list` (expect `decisionmcp: connected, 13 tools`). Tools
+Verify with `pi mcp list` (expect `decisionmcp: connected, 15 tools`). Tools
 are `mcp__decisionmcp__<tool>`. The legacy `pi-mcp-extension` bridge (SSE at
 `/sse`) is no longer needed; the server still serves `/sse` for other old
 clients.

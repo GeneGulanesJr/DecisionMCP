@@ -7,6 +7,7 @@ git clone <repo-url>
 cd DecisionMCP
 pip install -e ".[dev]"           # code + tests (no engine, no GPU)
 pip install -e ".[dev,laya]"      # + the Laya engine, to actually serve
+pip install -e ".[dev,d1]"        # + the d1 engine (LiquidAI d1-3B) instead
 ```
 
 Verify with:
@@ -33,12 +34,14 @@ DecisionMCP/
 │   ├── usage.py                    # SQLite usage/session log
 │   ├── engines/
 │   │   ├── base.py                 # DecisionEngine protocol + PresetSpec
-│   │   └── laya.py                 # LayaEngine (default, lazy import)
+│   │   ├── __init__.py             # ENGINES registry + build_engine()
+│   │   ├── laya.py                 # LayaEngine (default, lazy import)
+│   │   └── d1.py                   # D1Engine (LiquidAI d1-3B via transformers)
 │   └── tools/
 │       ├── __init__.py             # registry
 │       ├── base.py                 # abstract Tool
 │       ├── _helpers.py             # strict answer parsers
-│       └── ... (13 tools, one file each)
+│       └── ... (15 tools, one file each)
 ├── tests/
 │   ├── conftest.py                 # FakeEngine double
 │   ├── fixtures.py                 # engine-shaped answer builders
@@ -181,10 +184,13 @@ class MyEngine:
         ...
 ```
 
-Export it from `decision_mcp/engines/__init__.py`, then wire it in
-`server.py`: `DecisionBridge(engine=MyEngine(), ...)`. Heavy imports go
-*inside* methods (see `engines/laya.py`) so the package imports — and the
-mocked test suite runs — without the engine installed.
+Register it in the `ENGINES` dict in `decision_mcp/engines/__init__.py`, then
+select it with `DECISIONMCP_ENGINE=myengine` — the server builds the engine
+via `build_engine(settings.engine)` and hands it to `DecisionBridge`.
+`D1Engine` (`engines/d1.py`) is a complete second-engine example. Heavy
+imports go *inside* methods (see `engines/laya.py`, `engines/d1.py`) so the
+package imports — and the mocked test suite runs — without the engine
+installed.
 
 ## Verifying against the real engine
 

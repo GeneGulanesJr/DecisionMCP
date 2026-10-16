@@ -17,6 +17,9 @@ transports on the same port:
 - **Legacy SSE** at ``/sse`` + ``/messages/`` — kept for older clients
   (pi-mcp-extension era).
 
+Browser pages can reach ``/mcp`` only from origins listed in
+``DECISIONMCP_CORS_ORIGINS`` (empty by default; see :func:`add_cors`).
+
 Error handling
 --------------
 
@@ -42,6 +45,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from mcp import types
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
@@ -53,6 +57,7 @@ from starlette.types import Receive, Scope, Send
 
 from .bridge import DecisionBridge
 from .config import settings
+from .engines import build_engine
 from .errors import DecisionMCPError
 from .tools import TOOLS
 from .usage import UsageStore, current_session, current_tool
@@ -68,7 +73,11 @@ usage_store = (
     if settings.usage_enabled
     else None
 )
-bridge = DecisionBridge(preload=settings.preload_models, usage=usage_store)
+bridge = DecisionBridge(
+    engine=build_engine(settings.engine),
+    preload=settings.preload_models,
+    usage=usage_store,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +183,37 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="decisionmcp", lifespan=_lifespan)
+
+
+def add_cors(target: FastAPI, origins: list[str]) -> None:
+    """Let pages served from ``origins`` speak streamable HTTP to ``/mcp``.
+
+    Off unless origins are configured (``DECISIONMCP_CORS_ORIGINS``): with no
+    middleware the server sends no CORS headers and browsers block every
+    cross-origin page, which is the right default for a server without auth.
+    The session id travels in a response header, so it has to be exposed for
+    page scripts to read it.
+    """
+    if not origins:
+        return
+    target.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "content-type",
+            "accept",
+            "mcp-session-id",
+            "mcp-protocol-version",
+            "last-event-id",
+        ],
+        expose_headers=["mcp-session-id"],
+        allow_credentials=False,
+        max_age=600,
+    )
+
+
+add_cors(app, settings.cors_origin_list)
 
 
 @app.get("/health")

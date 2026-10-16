@@ -97,6 +97,24 @@ def choice_of(raw: dict, key: str, tool_name: str) -> tuple[str, float]:
     return entry["choice"], float(entry["answer_confidence"])
 
 
+def choice_prob(raw: dict, key: str, label: str, tool_name: str) -> float:
+    """Probability a ``choice`` question puts on ``label`` (not only on the winner)."""
+    entry = extract_answer(raw, key, "choice", tool_name)
+    probs = entry.get("probabilities")
+    if not isinstance(probs, dict):
+        raise ToolError(tool_name, f"Missing 'probabilities' at {key!r}: {entry!r}")
+    if label not in probs:
+        raise ToolError(
+            tool_name, f"Missing label {label!r} in probabilities at {key!r}: {sorted(probs)}"
+        )
+    try:
+        return float(probs[label])
+    except (TypeError, ValueError) as e:
+        raise ToolError(
+            tool_name, f"Probability of {label!r} at {key!r} is not numeric: {probs[label]!r}"
+        ) from e
+
+
 def yes_prob(raw: dict, key: str, tool_name: str) -> float:
     """P(yes) of a ``noul`` question."""
     entry = extract_answer(raw, key, "noul", tool_name)

@@ -8,6 +8,7 @@ To add a new tool:
 That's the only edit needed — schemas, routes, and dispatch all derive
 from the class.
 """
+from .advisory import AdvisoryTool
 from .base import Tool
 from .bug_severity import BugSeverityTool
 from .commit_classify import CommitClassifyTool
@@ -16,6 +17,7 @@ from .email import EmailTool
 from .guard import GuardTool
 from .moderate import ModerateTool
 from .review_tone import ReviewToneTool
+from .road_report import RoadReportTool
 from .route import RouteTool
 from .secret_risk import SecretRiskTool
 from .test_priority import TestPriorityTool
@@ -42,12 +44,18 @@ _CUSTOM_TOOLS: list[Tool] = [
     DiffIntentTool(),
 ]
 
+# Tools backed by custom question schemas (road and traffic, built for KAirOS).
+_ROAD_TOOLS: list[Tool] = [
+    RoadReportTool(),
+    AdvisoryTool(),
+]
+
 # Maintenance tools (no model inference).
 _ADMIN_TOOLS: list[Tool] = [
     UpdateTool(),
     UsageTool(),
 ]
 
-TOOLS: list[Tool] = _PRESET_TOOLS + _CUSTOM_TOOLS + _ADMIN_TOOLS
+TOOLS: list[Tool] = _PRESET_TOOLS + _CUSTOM_TOOLS + _ROAD_TOOLS + _ADMIN_TOOLS
 
 __all__ = ["TOOLS", "Tool"]

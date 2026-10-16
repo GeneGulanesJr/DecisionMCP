@@ -1,6 +1,6 @@
 # Tools reference
 
-Eleven tools run inference through `DecisionBridge.predict(state, preset)` or `DecisionBridge.predict_custom(state, questions, state_key)`. Each wraps an engine-registered preset (or a custom question set) and parses the result into a typed Pydantic output schema. Two more (`decision_update`, `decision_usage`) are maintenance tools that don't run the models.
+Thirteen tools run inference through `DecisionBridge.predict(state, preset)` or `DecisionBridge.predict_custom(state, questions, state_key)`. Each wraps an engine-registered preset (or a custom question set) and parses the result into a typed Pydantic output schema. Two more (`decision_update`, `decision_usage`) are maintenance tools that don't run the models.
 
 ## How the engine answers
 
@@ -369,6 +369,110 @@ class DiffIntentOutput(BaseModel):
 **`risk` here** = "blast radius if this breaks", not "is this buggy". `cross_cutting` + `high` = needs deep review. `single_file` + `low` = likely safe.
 
 **Where the parser lives:** `decision_mcp/tools/diff_intent.py`
+
+---
+
+## decision_road_report
+
+Triage a road-user report note. Built for KAirOS: a road user taps a hazard type, picks a road and may add a short note in English, Tagalog or Taglish; an MMDA planner then confirms or dismisses the report. The tool gives the planner typed answers and an ordering hint.
+
+**Input:**
+```python
+class RoadReportInput(BaseModel):
+    text: str                    # the note; must not be blank
+    reported_type: str | None    # flood | crash | roadwork | parking | stalled | signal (what the user tapped)
+    road: str | None             # accepted, not used
+    depth: str | None            # flood depth label, e.g. "not passable to light vehicles"
+```
+
+**Output:**
+```python
+class RoadReportOutput(BaseModel):
+    hazard: str                         # flood | crash | roadwork | parking | stalled | signal | other | not_a_report
+    hazard_from_note: str               # same labels: what the note says when read alone
+    matches_reported_type: bool | None  # None when no reported_type was given
+    fits_reported_type: float | None    # P(the note could be about the tapped type)
+    severity: str                       # low | medium | high
+    blocks_road: float                  # P(the note says a lane or the road is blocked)
+    spam: float                         # P(joke, insult, advertisement or unrelated)
+    suggestion: str                     # confirm | verify | dismiss
+    confidence: float                   # confidence of the answer that decided `hazard`
+    details: dict
+```
+
+**What the model sees.** Only the note is the state. With the tapped type written into the state, the model echoed it back in 16 of 19 development notes whose tapped type was wrong, and a `Road: ...` line lowered hazard accuracy from 36/48 to 29/48, so neither is shown. `road` is ignored. `depth` only sets a floor on `severity`, in code. `reported_type` reaches the model through one extra yes/no question, `fits_reported_type` ("A road user filed `report` as: a flood or deep water on the road. Could the note be about that?"), because real notes are short and lean on the tapped type: "Knee-deep near UST" names no hazard when read alone.
+
+**How the fields are derived (all in code, after the model answers):**
+
+| Field | Rule |
+| ----- | ---- |
+| `matches_reported_type` | `True` if `hazard_from_note == reported_type`. Otherwise `True` if the note does not confidently name another of the six types (confidence < 0.5, or `other` / `not_a_report`), `fits_reported_type >= 0.5` and `spam < 0.5`. Otherwise `False`. |
+| `hazard` | `hazard_from_note`, or `reported_type` when the match came from `fits_reported_type`. |
+| `severity` | The model's choice; at least `medium` when `blocks_road >= 0.5`; `high` when `depth` says not passable (to light vehicles or to all). |
+| `suggestion` = `dismiss` | `spam >= 0.5` and `hazard_from_note == "not_a_report"` (both questions agree). |
+| `suggestion` = `confirm` | `spam < 0.2`, `hazard` is one of the six types, `matches_reported_type` is not `False`, and `confidence >= 0.5` (`>= 0.7` when the match came from `fits_reported_type`). |
+| `suggestion` = `verify` | Everything else. |
+
+The cut-offs sit on probabilities that the stock Laya checkpoints do not calibrate. Use `suggestion` to order a human queue. Do not act on it automatically.
+
+**Measured accuracy (laya 0.3.21, stock checkpoints, zero-shot).** All notes were written by us for testing; none is a real report. Wording and rules were chosen on the development notes only.
+
+| Set | n | `suggestion` correct | English | Taglish | Tagalog |
+| --- | - | -------------------- | ------- | ------- | ------- |
+| Development (48 notes that name their hazard) | 48 | 34 | 15/16 | 11/15 | 8/17 |
+| Held-out third of the same set | 24 | 15 | 8/8 | 7/9 | 0/7 |
+| Short notes that lean on the tapped type, scored once | 24 | 12 | 6/9 | 6/8 | 0/7 |
+
+Other fields on the held-out third: `hazard` 16/24, `matches_reported_type` 18/24, `spam` 22/24, `severity` 12/20 exact and 19/20 within one level, `blocks_road` 13/20.
+
+**Limitations:**
+- **Tagalog is not usable as shipped.** On the two test sets no Tagalog note got the right suggestion (0/14), against 14/17 for English and 13/17 for Taglish. Laya's router has no Tagalog word list, so Tagalog and Taglish text goes to the English checkpoint. Forcing the multilingual checkpoint made the development notes worse (hazard 25/48 against 36/48).
+- **Real reports can be suggested for dismissal.** Three genuine flood notes in Tagalog or Taglish, of 48 test notes, came back `dismiss` ("Baha dito, hanggang binti" among them). No test note was wrongly suggested for confirmation.
+- `severity` is the weakest answer (the model leans to the middle level).
+- The held-out third was scored once with a note-only version of the tool (suggestion 14/24) before the `fits_reported_type` question was added; the table shows the final tool. The short-note set was written afterwards and scored once.
+- The way to better numbers is fine-tuning on labelled reports (see Laya's fine-tuning notes); the checkpoints are described upstream as "a fast base to specialise, not a zero-shot decision engine".
+
+**Latency:** one call asks five questions (four without `reported_type`). Apple M4, after warm-up, English checkpoint: about 600 ms median for the five questions on the Apple GPU, and about 670 ms for four questions on CPU (4 threads). The multilingual checkpoint takes about 250 ms for four questions on CPU.
+
+**Where the parser lives:** `decision_mcp/tools/road_report.py`
+
+---
+
+## decision_advisory
+
+Classify a public post by MMDA, DPWH, PAGASA or a local government: is it a road advisory, what is it about, and which KAirOS routing-rule type would it map to.
+
+**Input:**
+```python
+class AdvisoryInput(BaseModel):
+    text: str    # the post; must not be blank
+```
+
+**Output:**
+```python
+class AdvisoryOutput(BaseModel):
+    is_road_advisory: bool
+    p_road_advisory: float
+    kind: str        # closure | flood | crash | roadwork | rerouting | number_coding | weather | event | other
+    effect: str      # close | restrict | divert | weight | none
+    confidence: float  # weakest of the three answers
+    details: dict
+```
+
+**`effect`** is the routing-rule type: `close` (shut to all vehicles), `restrict` (shut to some vehicle classes such as trucks or light vehicles), `divert` (the road stays open and an official alternate route is given), `weight` (open but slow), `none`. It is forced to `none` when `is_road_advisory` is false; that is the only rule applied on top of the model. The tool does not extract the road name, the dates or the alternate route, so a person still writes the rule.
+
+**Measured accuracy (same conditions as above; posts written by us in agency style):**
+
+| Set | n | `is_road_advisory` | `kind` | `effect` | `effect`, English | `effect`, Tagalog |
+| --- | - | ------------------ | ------ | -------- | ----------------- | ----------------- |
+| Development | 24 | 18 | 16 | 14 | 8/9 | 2/7 |
+| Held-out, scored once | 12 | 11 | 8 | 9 | 6/7 | 3/4 |
+
+`kind` overlaps by design (a flyover closed for retrofitting is both a closure and roadwork); counting the second acceptable label gives 18/24 and 9/12.
+
+**Limitations:** the same language gap as `decision_road_report`: English posts are read well, Tagalog ones are not (development `effect` 2/7, and closures written in Tagalog came back `none`). Number-coding and weather posts are the usual `is_road_advisory` misses.
+
+**Where the parser lives:** `decision_mcp/tools/advisory.py`
 
 ---
 

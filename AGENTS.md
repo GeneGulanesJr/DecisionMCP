@@ -4,7 +4,7 @@ If you're an AI coding agent (Aider, Cursor, Claude Code, Pi, etc.) working in t
 
 ## What this project is
 
-**DecisionMCP** is an engine-agnostic HTTP MCP server (streamable HTTP at `/mcp`, legacy SSE at `/sse`) that serves decision-model inferences to Pi (and any other MCP client). It ships with the [Laya](https://github.com/NandhaKishorM/laya) engine behind a pluggable `DecisionEngine` protocol, so other engines can be added without touching tools. It exposes **13 tools** at `http://127.0.0.1:8765` by default — 5 engine-preset + 6 coding-specific + 2 maintenance. Model weights live in `./models` (gitignored); usage logs in `./data` (gitignored).
+**DecisionMCP** is an engine-agnostic HTTP MCP server (streamable HTTP at `/mcp`, legacy SSE at `/sse`) that serves decision-model inferences to Pi (and any other MCP client). It ships with the [Laya](https://github.com/NandhaKishorM/laya) engine behind a pluggable `DecisionEngine` protocol, so other engines can be added without touching tools. It exposes **15 tools** at `http://127.0.0.1:8765` by default — 5 engine-preset + 6 coding-specific + 2 road-and-traffic + 2 maintenance. Model weights live in `./models` (gitignored); usage logs in `./data` (gitignored).
 
 | Tool | Purpose | Source |
 |---|---|---|
@@ -19,6 +19,8 @@ If you're an AI coding agent (Aider, Cursor, Claude Code, Pi, etc.) working in t
 | `decision_test_priority` | Test run priority + reason | custom questions |
 | `decision_secret_risk` | Detect leaked credentials in text | custom questions |
 | `decision_diff_intent` | PR diff intent / scope / risk | custom questions |
+| `decision_road_report` | Road-user report triage (hazard, severity, blocked, spam, suggestion) | custom questions |
+| `decision_advisory` | Agency post: road advisory, kind, routing effect | custom questions |
 | `decision_update` | Check/apply Laya engine + model updates, list new models | maintenance (no inference) |
 | `decision_usage` | Usage/session stats and JSONL export for training | maintenance (no inference) |
 
@@ -53,7 +55,7 @@ python -c "from decision_mcp.bridge import DecisionBridge; b = DecisionBridge(pr
 | Add a new tool | Create `decision_mcp/tools/mytool.py`, register in `decision_mcp/tools/__init__.py`, add test in `tests/test_tools.py` |
 | Change a tool's parsing | Edit the tool file in `decision_mcp/tools/` |
 | Add an engine preset | Edit the engine's `presets()` (e.g. `decision_mcp/engines/laya.py`) |
-| Add a new engine | Create `decision_mcp/engines/myengine.py` implementing `DecisionEngine`, wire into `DecisionBridge(engine=...)` in `server.py` |
+| Add a new engine | Create `decision_mcp/engines/myengine.py` implementing `DecisionEngine`, register it in the `ENGINES` dict in `decision_mcp/engines/__init__.py`, select with `DECISIONMCP_ENGINE` |
 | Change server port / host / log level | Edit `.env`, or set `DECISIONMCP_*` env var |
 | Change FastAPI / MCP wiring | Edit `decision_mcp/server.py` |
 | Change the abstract Tool contract | Edit `decision_mcp/tools/base.py` (rare — affects all tools) |
@@ -66,7 +68,7 @@ python -c "from decision_mcp.bridge import DecisionBridge; b = DecisionBridge(pr
 - Type hints **everywhere**. `from __future__ import annotations` at the top of every file.
 - **Pydantic v2** for schemas (`BaseModel.model_json_schema()`, not `schema()`).
 - **Async tools** — `async def run(...)`.
-- **Raise on bad data, don't return defaults.** Silent false negatives are worse than errors. Use the helpers in `decision_mcp/tools/_helpers.py` (`require_dict`, `choice_of`, `yes_prob`, `score_level`, `bin_mass`) — they raise `ToolError` on any malformed engine output.
+- **Raise on bad data, don't return defaults.** Silent false negatives are worse than errors. Use the helpers in `decision_mcp/tools/_helpers.py` (`require_dict`, `choice_of`, `choice_prob`, `yes_prob`, `score_level`, `bin_mass`) — they raise `ToolError` on any malformed engine output.
 - **Use the custom exception hierarchy.** Catch `DecisionMCPError` at the boundary (server). Use `BridgeError` / `UnknownPresetError` for engine issues, `ToolError` for parsing issues.
 - **Log context, not data.** When logging errors, include the preset name and input length, not the raw input — to avoid leaking user prompts into log files.
 - Tools in `decision_mcp/tools/` are **pure plugins**: subclass `Tool`, define class attributes, register in `__init__.py`. No other files need to change.

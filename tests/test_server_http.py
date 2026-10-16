@@ -67,7 +67,7 @@ def test_health(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["tools"] == 13
+    assert body["tools"] == 15
 
 
 def test_streamable_initialize_and_list_tools(client: TestClient) -> None:
@@ -91,8 +91,9 @@ def test_streamable_initialize_and_list_tools(client: TestClient) -> None:
     )
     assert r.status_code == 200
     names = [t["name"] for t in r.json()["result"]["tools"]]
-    assert len(names) == 13
+    assert len(names) == 15
     assert "decision_guard" in names
+    assert {"decision_road_report", "decision_advisory"} <= set(names)
 
 
 def test_streamable_unknown_tool_is_error_result(client: TestClient) -> None:
@@ -142,3 +143,92 @@ def test_sse_legacy_route_wired(client: TestClient) -> None:
     last = srv.app.routes[-1]
     assert isinstance(last, Mount)
     assert isinstance(last.app, srv._StreamableHTTPGuard)
+
+
+# ---------------------------------------------------------------------------
+# CORS (browser access) — off by default, exact origins only
+# ---------------------------------------------------------------------------
+
+ORIGIN = "http://localhost:8000"
+
+
+def test_no_cors_headers_by_default(client: TestClient) -> None:
+    """With DECISIONMCP_CORS_ORIGINS unset the server stays closed to browsers."""
+    import decision_mcp.config as cfg
+
+    if cfg.settings.cors_origin_list:
+        pytest.skip("DECISIONMCP_CORS_ORIGINS is set in this environment")
+    r = client.get("/health", headers={"Origin": ORIGIN})
+    assert r.status_code == 200
+    assert "access-control-allow-origin" not in r.headers
+    r = client.post("/mcp", json=INIT, headers={**POST_HEADERS, "Origin": ORIGIN})
+    assert r.status_code == 200
+    assert "access-control-allow-origin" not in r.headers
+
+
+def _cors_app(origins: list[str]) -> TestClient:
+    """A stand-in app with the server's CORS policy (the real app's lifespan runs once)."""
+    from fastapi import FastAPI
+    from starlette.responses import JSONResponse
+
+    import decision_mcp.server as srv
+
+    app = FastAPI()
+
+    @app.post("/mcp")
+    async def _mcp() -> JSONResponse:
+        return JSONResponse({"ok": True}, headers={"mcp-session-id": "abc123"})
+
+    srv.add_cors(app, origins)
+    return TestClient(app)
+
+
+def test_cors_preflight_and_exposed_session_header() -> None:
+    c = _cors_app([ORIGIN])
+    r = c.options(
+        "/mcp",
+        headers={
+            "Origin": ORIGIN,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,accept,mcp-session-id,mcp-protocol-version",
+        },
+    )
+    assert r.status_code == 200
+    assert r.headers["access-control-allow-origin"] == ORIGIN
+    assert "POST" in r.headers["access-control-allow-methods"]
+    allowed = r.headers["access-control-allow-headers"].lower()
+    for h in ("content-type", "accept", "mcp-session-id", "mcp-protocol-version", "last-event-id"):
+        assert h in allowed
+
+    r = c.post("/mcp", json={}, headers={"Origin": ORIGIN})
+    assert r.headers["access-control-allow-origin"] == ORIGIN
+    assert "mcp-session-id" in r.headers["access-control-expose-headers"].lower()
+    assert "access-control-allow-credentials" not in r.headers
+
+
+def test_cors_other_origin_gets_no_grant() -> None:
+    c = _cors_app([ORIGIN])
+    r = c.options(
+        "/mcp",
+        headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
+    )
+    assert "access-control-allow-origin" not in r.headers
+    r = c.post("/mcp", json={}, headers={"Origin": "https://evil.example"})
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_add_cors_without_origins_adds_nothing() -> None:
+    c = _cors_app([])
+    r = c.post("/mcp", json={}, headers={"Origin": ORIGIN})
+    assert "access-control-allow-origin" not in r.headers
+
+
+def test_cors_origins_setting_parses_and_refuses_wildcards() -> None:
+    from decision_mcp.config import Settings
+
+    assert Settings(_env_file=None).cors_origin_list == []
+    s = Settings(_env_file=None, cors_origins=" http://localhost:8000 , http://127.0.0.1:8000,")
+    assert s.cors_origin_list == ["http://localhost:8000", "http://127.0.0.1:8000"]
+    for bad in ("*", "http://localhost:8000,*", "http://*.example.com", "localhost:8000", "http://localhost:8000/"):
+        with pytest.raises(ValueError):
+            Settings(_env_file=None, cors_origins=bad)

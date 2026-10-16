@@ -121,7 +121,7 @@ You forgot `await` on an async tool call. Tool `run()` methods are async — alw
 curl http://127.0.0.1:8765/health
 ```
 
-Should return `{"status": "ok", "tools": 13}`.
+Should return `{"status": "ok", "tools": 15}`.
 
 ### Check Pi's MCP config
 
@@ -151,7 +151,7 @@ Common mistakes:
 Then verify outside Pi:
 
 ```bash
-pi mcp list   # expect: decisionmcp: connected, 13 tools
+pi mcp list   # expect: decisionmcp: connected, 15 tools
 ```
 
 ### Check the firewall
