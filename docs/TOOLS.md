@@ -521,7 +521,7 @@ Summarise what the engine has been used for, or export it as training data. Engi
 
 **Input:** `action`: `"stats"` (default) or `"export"`; optional `since_hours`; for `export`, optional `labeled_only` (only rows that carry input text — ready `(input, answers)` training pairs; the export file is then named `usage-labeled-<timestamp>.jsonl`).
 
-**What is logged:** every prediction, success or failure, in a SQLite file (`<data_dir>/usage.db`, default `./data/usage.db`): timestamp, MCP session id, tool, preset, checkpoint that answered, latency, input length and tokens, the engine's full answers (labels + probabilities) and routing, plus the engine version that produced the labels (`engine_version` — rows written before this column existed carry `null`: provenance unknown; legacy `laya_version` columns are renamed in place). One `sessions` row per MCP connection records the client's user-agent and when it disconnected.
+**What is logged:** every prediction, success or failure, in a SQLite file (`<data_dir>/usage.db`, default `./data/usage.db`): timestamp, MCP session id, tool, preset, checkpoint that answered, latency, input length and tokens, the engine's full answers (labels + probabilities) and routing, plus the engine version that produced the labels (`engine_version` — rows written before this column existed carry `null`: provenance unknown). One `sessions` row per MCP connection records the client's user-agent and when it disconnected.
 
 **Input text is NOT stored by default**, because inputs can hold prompts, source code and credentials. Set `DECISIONMCP_USAGE_STORE_TEXT=true` to keep it; that is what makes an export usable as `(input, answers)` pairs. Even then, text sent to `decision_secret_risk` is never stored.
 

@@ -80,13 +80,7 @@ class UsageStore:
         """In-place migrations for DBs created by older versions."""
         cols = {r["name"] for r in self._db.execute("PRAGMA table_info(calls)")}
         if "engine_version" not in cols:
-            if "laya_version" in cols:
-                # Pre-agnostic column name (LayaMCP era); data carries over.
-                self._db.execute(
-                    "ALTER TABLE calls RENAME COLUMN laya_version TO engine_version"
-                )
-            else:
-                self._db.execute("ALTER TABLE calls ADD COLUMN engine_version TEXT")
+            self._db.execute("ALTER TABLE calls ADD COLUMN engine_version TEXT")
 
     # ------------------------------------------------------------------
     # Writes

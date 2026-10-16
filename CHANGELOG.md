@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Removed: LayaMCP-era leftovers
+
+The rename to DecisionMCP shipped in 0.2.0; what remained of the old name is
+gone. The Laya *engine* stays.
+
+- `docs/MIGRATION.md` (the LayaMCP v0.1.x upgrade guide) and the migration
+  notes in README, AGENTS, CONFIGURATION, TROUBLESHOOTING and the Pi
+  integration README. The 0.2.0 entry below keeps the rename summary.
+- The usage store no longer renames a `laya_version` column; a DB that old
+  gets a new, empty `engine_version` column.
+- The Pi `mcp.json` examples no longer say "over the Laya engine".
+
 ### Added: d1-omni engine (`DECISIONMCP_ENGINE=d1-omni`) — d1-omni-600M on MLX
 
 - `DECISIONMCP_ENGINE=d1-omni` serves
@@ -106,8 +118,7 @@ LayaMCP is renamed **DecisionMCP** so decision tools are no longer coupled to
 the Laya library. Laya moves behind a pluggable engine contract; Laya itself
 remains the default engine.
 
-**Migration guide:** step-by-step instructions live in
-[docs/MIGRATION.md](docs/MIGRATION.md). Summary:
+**Migration summary:**
 
 - Package: `laya_mcp` → `decision_mcp`; console script `layamcp` → `decisionmcp`.
 - Env vars: `LAYAMCP_*` → `DECISIONMCP_*` (rename them in `.env` and any

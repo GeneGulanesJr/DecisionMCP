@@ -134,15 +134,14 @@ bridge is gone; its `transport`/`lifecycle` keys are not valid here):
   "mcpServers": {
     "decisionmcp": {
       "url": "http://127.0.0.1:8765/mcp",
-      "description": "Decision-model tools over the Laya engine"
+      "description": "Decision-model tools"
     }
   }
 }
 ```
 
 Common mistakes:
-- Still registered under the old `layamcp` key, or still pointing at the
-  SSE endpoint (`/sse`) — the built-in client needs `/mcp` and rejects SSE
+- Still pointing at the SSE endpoint (`/sse`) — the built-in client needs `/mcp` and rejects SSE
 - Still running the removed `pi-mcp-extension` (delete it with
   `pi remove npm:pi-mcp-extension`) — it collides with the built-in `/mcp`
 - Wrong port

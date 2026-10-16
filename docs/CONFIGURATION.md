@@ -50,10 +50,6 @@ Pydantic-settings auto-loads it. The `.env` file is gitignored — safe for loca
 
 See `.env.example` for the canonical template.
 
-> **Migrating from LayaMCP:** the env prefix changed from `LAYAMCP_` to
-> `DECISIONMCP_`. Rename the variables in your `.env` / service definitions —
-> unknown `LAYAMCP_*` variables are ignored (`extra="ignore"`).
-
 ## Override at runtime
 
 ```bash

@@ -111,48 +111,6 @@ def test_migration_adds_engine_version_to_existing_db(tmp_path) -> None:
     assert fresh["engine_version"] == "1.2.3"  # new row: version captured
 
 
-def test_migration_renames_legacy_laya_version_column(tmp_path) -> None:
-    """A LayaMCP-era DB with `laya_version` keeps its data under the new name."""
-    import sqlite3
-
-    db = tmp_path / "laya-era.db"
-    conn = sqlite3.connect(db)
-    conn.executescript(
-        """
-        CREATE TABLE calls (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id TEXT NOT NULL,
-            ts REAL NOT NULL,
-            session_id TEXT,
-            tool TEXT,
-            preset TEXT,
-            model TEXT,
-            status TEXT NOT NULL,
-            error TEXT,
-            elapsed_ms REAL,
-            input_chars INTEGER NOT NULL,
-            input_tokens INTEGER,
-            answers TEXT,
-            routing TEXT,
-            input_text TEXT,
-            laya_version TEXT
-        );
-        INSERT INTO calls(run_id, ts, status, input_chars, laya_version)
-        VALUES ('legacy-laya', 0.0, 'ok', 3, '0.3.21');
-        """
-    )
-    conn.commit()
-    conn.close()
-
-    store = UsageStore(db)
-    out = tmp_path / "l.jsonl"
-    store.export_jsonl(out)
-    row = json.loads(out.read_text())
-    assert row["engine_version"] == "0.3.21"  # renamed, data preserved
-    cols = {r["name"] for r in store._db.execute("PRAGMA table_info(calls)")}
-    assert "engine_version" in cols and "laya_version" not in cols
-
-
 def test_text_stored_when_enabled(tmp_path) -> None:
     store = UsageStore(tmp_path / "u.db", store_text=True)
     _record(store, text="my prompt")
