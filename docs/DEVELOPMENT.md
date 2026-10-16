@@ -8,6 +8,7 @@ cd DecisionMCP
 pip install -e ".[dev]"           # code + tests (no engine, no GPU)
 pip install -e ".[dev,laya]"      # + the Laya engine, to actually serve
 pip install -e ".[dev,d1]"        # + the d1 engine (LiquidAI d1-3B) instead
+pip install -e ".[dev,d1-omni]"   # + the d1-omni engine (MLX, Apple Silicon) instead
 ```
 
 Verify with:
@@ -36,7 +37,8 @@ DecisionMCP/
 │   │   ├── base.py                 # DecisionEngine protocol + PresetSpec
 │   │   ├── __init__.py             # ENGINES registry + build_engine()
 │   │   ├── laya.py                 # LayaEngine (default, lazy import)
-│   │   └── d1.py                   # D1Engine (LiquidAI d1-3B via transformers)
+│   │   ├── d1.py                   # D1Engine (LiquidAI d1-3B via transformers)
+│   │   └── d1_omni.py              # D1OmniEngine (d1-omni-600M, 8-bit MLX via mlx-vlm)
 │   └── tools/
 │       ├── __init__.py             # registry
 │       ├── base.py                 # abstract Tool

@@ -9,7 +9,7 @@ All settings are env-overridable via the `DECISIONMCP_` prefix. Defaults are def
 | `host`                     | `DECISIONMCP_HOST`                | `127.0.0.1`   | Bind address. Use `0.0.0.0` for network access (behind a reverse proxy with auth).          |
 | `port`                     | `DECISIONMCP_PORT`                | `8765`        | HTTP port. Avoid conflicts with common services (5432 Postgres, 6379 Redis, 8080 alt-http). |
 | `preload_models`           | `DECISIONMCP_PRELOAD_MODELS`      | `true`        | Load model weights at startup. `false` defers to first call (slower first request).         |
-| `engine`                   | `DECISIONMCP_ENGINE`              | `laya`        | Which decision engine serves inference: `laya` (default) or `d1` ([LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B) via `transformers`, install `.[d1]`). See [Engines](#engines). |
+| `engine`                   | `DECISIONMCP_ENGINE`              | `laya`        | Which decision engine serves inference: `laya` (default), `d1` ([LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B) via `transformers`, install `.[d1]`) or `d1-omni` ([d1-omni-600M-MLX-8bit](https://huggingface.co/LiquidAI/d1-omni-600M-MLX-8bit) via `mlx-vlm`, Apple Silicon, install `.[d1-omni]`). See [Engines](#engines). |
 | `log_level`                | `DECISIONMCP_LOG_LEVEL`           | `INFO`        | Python logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`.                                 |
 | `data_dir`                 | `DECISIONMCP_DATA_DIR`            | `<project>/data` | Where the usage database (`usage.db`) and exports (`exports/`) live. Gitignored.        |
 | `usage_enabled`            | `DECISIONMCP_USAGE_ENABLED`       | `true`        | Log every prediction + MCP session to SQLite (for training data). `false` disables it.      |
@@ -25,6 +25,7 @@ All settings are env-overridable via the `DECISIONMCP_` prefix. Defaults are def
 | ------ | --------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `laya` | `.[laya]` | `convaiinnovations/laya` (3 checkpoints in `./models`)                 | Default. Picks the checkpoint per call by script detection.                                 |
 | `d1`   | `.[d1]`   | [LiquidAI/d1-3B](https://huggingface.co/LiquidAI/d1-3B) (3.1B, ~6 GB)  | One multimodal decision model via `transformers>=5.14` (`trust_remote_code`). cuda → mps → cpu. |
+| `d1-omni` | `.[d1-omni]` | [LiquidAI/d1-omni-600M-MLX-8bit](https://huggingface.co/LiquidAI/d1-omni-600M-MLX-8bit) (600M, 0.73 GB) | 8-bit MLX export via `mlx-vlm>=0.7.8`. Apple Silicon only. Same presets as `d1`. |
 
 Both ship the same five presets (guard / route / moderate / triage / email), so the 5 preset tools behave identically; the custom-question tools work with any engine by construction. An unknown name fails at startup with the list of valid engines.
 

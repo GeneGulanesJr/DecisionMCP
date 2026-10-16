@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added: d1-omni engine (`DECISIONMCP_ENGINE=d1-omni`) — d1-omni-600M on MLX
+
+- `DECISIONMCP_ENGINE=d1-omni` serves
+  [LiquidAI/d1-omni-600M-MLX-8bit](https://huggingface.co/LiquidAI/d1-omni-600M-MLX-8bit)
+  (0.73 GB, 8-bit) on Apple Silicon through `mlx-vlm>=0.7.8` (the first
+  PyPI release with d1 support). Install the new `d1-omni` extra
+  (`pip install -e ".[d1-omni]"`).
+- `decision_mcp/engines/d1_omni.py` reuses the d1 engine's five presets and
+  rewrites mlx-vlm's answer shape (`bool` / `value` / `metadata`) into the
+  one the tool parsers read (`noul` / `choice` / `score`, `legend`,
+  `answer_confidence`). `preload()` runs one warm-up question so the first
+  tool call doesn't pay MLX's ~3 s first-pass cost. The result's `model`
+  is the model ID, not the local snapshot path.
+- `tests/test_d1_omni_engine.py` covers it with a fake `mlx_vlm.predict`
+  (no mlx needed). Checked on an M4: all 13 inference tools on the real
+  model (70–400 ms each, preload ~4 s), and the HTTP server over MCP.
+
 ### Added: d1 engine (`DECISIONMCP_ENGINE=d1`) — LiquidAI d1-3B via transformers
 
 A second decision engine behind the same `DecisionEngine` protocol and the

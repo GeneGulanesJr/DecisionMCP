@@ -33,6 +33,12 @@ d1 = [
     "torchvision>=0.19",
     "pillow>=10",
 ]
+# Alternative engine: LiquidAI d1-omni-600M as an 8-bit MLX export
+# (https://huggingface.co/LiquidAI/d1-omni-600M-MLX-8bit). Apple Silicon only;
+# mlx-vlm 0.7.8 is the first release with d1 support.
+d1-omni = [
+    "mlx-vlm>=0.7.8; sys_platform == 'darwin' and platform_machine == 'arm64'",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",

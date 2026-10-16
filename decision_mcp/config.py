@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Which decision engine serves inference: a key from
-    # decision_mcp.engines.ENGINES ("laya" or "d1").
+    # decision_mcp.engines.ENGINES ("laya", "d1" or "d1-omni").
     engine: str = "laya"
 
     # Usage / session log (SQLite) used to collect data for training.

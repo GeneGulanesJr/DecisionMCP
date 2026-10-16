@@ -78,7 +78,7 @@ def _bridge(monkeypatch: pytest.MonkeyPatch, model: FakeD1Model) -> DecisionBrid
 
 
 def test_registry_lists_both_engines() -> None:
-    assert set(ENGINES) == {"laya", "d1"}
+    assert set(ENGINES) == {"laya", "d1", "d1-omni"}
 
 
 def test_build_engine_makes_a_d1(monkeypatch: pytest.MonkeyPatch) -> None:

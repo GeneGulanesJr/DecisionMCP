@@ -4,6 +4,7 @@ from __future__ import annotations
 from ..errors import BridgeError
 from .base import DecisionEngine, PresetSpec
 from .d1 import D1Engine
+from .d1_omni import D1OmniEngine
 from .laya import LayaEngine
 
 # Registry backing the DECISIONMCP_ENGINE setting. Constructing an engine is
@@ -11,6 +12,7 @@ from .laya import LayaEngine
 ENGINES: dict[str, type] = {
     LayaEngine.name: LayaEngine,
     D1Engine.name: D1Engine,
+    D1OmniEngine.name: D1OmniEngine,
 }
 
 
@@ -28,4 +30,12 @@ def build_engine(name: str) -> DecisionEngine:
         ) from None
 
 
-__all__ = ["DecisionEngine", "D1Engine", "ENGINES", "LayaEngine", "PresetSpec", "build_engine"]
+__all__ = [
+    "DecisionEngine",
+    "D1Engine",
+    "D1OmniEngine",
+    "ENGINES",
+    "LayaEngine",
+    "PresetSpec",
+    "build_engine",
+]

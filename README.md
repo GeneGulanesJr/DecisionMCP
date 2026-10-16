@@ -1,6 +1,6 @@
 # DecisionMCP
 
-Engine-agnostic HTTP MCP server for decision-model inferences, for use with [Pi](https://pi.dev) (and any other MCP client). Two decision engines ship behind a pluggable `DecisionEngine` protocol — [Laya](https://github.com/NandhaKishorM/laya) (default) and [LiquidAI d1-3B](https://huggingface.co/LiquidAI/d1-3B), picked with `DECISIONMCP_ENGINE` — other engines plug in without touching tools.
+Engine-agnostic HTTP MCP server for decision-model inferences, for use with [Pi](https://pi.dev) (and any other MCP client). Three decision engines ship behind a pluggable `DecisionEngine` protocol — [Laya](https://github.com/NandhaKishorM/laya) (default), [LiquidAI d1-3B](https://huggingface.co/LiquidAI/d1-3B) and [d1-omni-600M (8-bit MLX, Apple Silicon)](https://huggingface.co/LiquidAI/d1-omni-600M-MLX-8bit), picked with `DECISIONMCP_ENGINE` — other engines plug in without touching tools.
 
 ## What it does
 
@@ -36,6 +36,7 @@ uv venv .venv && source .venv/bin/activate     # or python -m venv
 uv pip install -e ".[dev]"                     # or pip install -e ".[dev]"
 uv pip install -e ".[dev,laya]"                # + the Laya engine (heavy: torch)
 uv pip install -e ".[dev,d1]"                  # or: the d1 engine (LiquidAI d1-3B, transformers>=5.14)
+uv pip install -e ".[dev,d1-omni]"             # or: d1-omni-600M, 8-bit MLX (Apple Silicon, mlx-vlm>=0.7.8)
 ```
 
 ### Models
@@ -50,6 +51,8 @@ Keep them current with the `decision_update` tool (see [docs/TOOLS.md](docs/TOOL
 
 With `DECISIONMCP_ENGINE=d1`, the [d1-3B](https://huggingface.co/LiquidAI/d1-3B) checkpoint is downloaded through the same Hugging Face cache (so it also lands in `./models`) on first start; `decision_update` does not manage it — update by re-pulling the repo or pinning a revision.
 
+With `DECISIONMCP_ENGINE=d1-omni`, [d1-omni-600M-MLX-8bit](https://huggingface.co/LiquidAI/d1-omni-600M-MLX-8bit) (0.73 GB) is downloaded the same way and runs on Apple Silicon through [mlx-vlm](https://github.com/Blaizzy/mlx-vlm). It uses the d1 presets; `decision_update` does not manage it either. Measured on an M4: preload about 4 s (includes a warm-up pass), 70–400 ms per tool call.
+
 ## Run
 
 ```bash
@@ -59,6 +62,7 @@ decisionmcp
 # Or override via env:
 DECISIONMCP_PORT=9000 decisionmcp
 DECISIONMCP_ENGINE=d1 decisionmcp             # serve LiquidAI d1-3B instead of Laya
+DECISIONMCP_ENGINE=d1-omni decisionmcp        # serve d1-omni-600M (8-bit MLX) instead of Laya
 ```
 
 The MCP endpoint uses **streamable HTTP** at `http://127.0.0.1:8765/mcp` (POST/GET/DELETE). Legacy SSE clients can still connect at `/sse` (`GET /health` for a health check).
