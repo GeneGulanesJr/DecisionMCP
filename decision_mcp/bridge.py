@@ -64,12 +64,17 @@ class DecisionBridge:
     # High-level API used by every tool
     # ------------------------------------------------------------------
 
-    def predict(self, state: str, preset: str) -> Any:
+    def predict(
+        self, state: str, preset: str, images: list[str] | None = None
+    ) -> Any:
         """Run a named preset against ``state``.
 
         Args:
             state: Input text (prompt, email body, JSON, ticket, etc.).
             preset: Key from :attr:`presets`.
+            images: Optional list of base64-encoded JPEG frames. Only passed
+                to the engine when it declares ``supports_images``; ignored
+                otherwise (vision tools gate on :meth:`require_vision`).
 
         Returns:
             The engine's normalized decision dict (see ``tools/_helpers.py``).
@@ -90,31 +95,95 @@ class DecisionBridge:
             state_key=spec.state_key,
             label=f"preset={preset!r}",
             preset=preset,
+            images=images,
         )
 
-    def predict_custom(self, state: str, questions: Any, state_key: str = "text") -> Any:
+    def predict_custom(
+        self,
+        state: str,
+        questions: Any,
+        state_key: str = "text",
+        images: list[str] | None = None,
+        audio=None,
+    ) -> Any:
         """Run a custom questions schema (not from the engine's presets).
 
         Args:
             state: Input text.
             questions: Question dict (``{name: {"type", "instructions", ...}}``).
             state_key: Field name the question instructions use to refer to the text.
+            images: Optional base64 JPEG frames (see :meth:`predict`).
+            audio: Optional mono 16 kHz numpy array (int16 PCM or float in
+                [-1, 1]); forwarded when the engine declares ``supports_audio``.
 
         Raises:
             BridgeError: if the engine call fails.
         """
-        return self._run(state, questions, state_key=state_key, label="custom", preset=None)
+        return self._run(
+            state, questions, state_key=state_key, label="custom", preset=None,
+            images=images, audio=audio,
+        )
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
 
+    @property
+    def vision_capable(self) -> bool:
+        """Whether the active engine consumes ``images`` in its state."""
+        return bool(getattr(self.engine, "supports_images", False))
+
+    @property
+    def audio_capable(self) -> bool:
+        """Whether the active engine consumes ``audio`` in its state."""
+        return bool(getattr(self.engine, "supports_audio", False))
+
+    def require_vision(self, tool_name: str) -> None:
+        """Raise :class:`BridgeError` unless the engine can see images.
+
+        Vision tools call this before building their questions so the failure
+        names the active engine instead of degrading into a text-only guess.
+        """
+        if not self.vision_capable:
+            raise BridgeError(
+                f"[{tool_name}] needs an engine that accepts images "
+                f"(supports_images); active engine {self.engine.name!r} cannot. "
+                "Set DECISIONMCP_ENGINE=d1-omni-tf or d1-omni."
+            )
+
+    def require_audio(self, tool_name: str) -> None:
+        """Raise :class:`BridgeError` unless the engine can hear audio.
+
+        Audio tools call this before building their questions so the failure
+        names the active engine instead of degrading into a guess from
+        energy numbers alone.
+        """
+        if not self.audio_capable:
+            raise BridgeError(
+                f"[{tool_name}] needs an engine that accepts audio "
+                f"(supports_audio); active engine {self.engine.name!r} cannot. "
+                "Set DECISIONMCP_ENGINE=d1-omni-tf or d1-omni."
+            )
+
     def _run(
-        self, text: str, questions: Any, *, state_key: str, label: str, preset: str | None
+        self,
+        text: str,
+        questions: Any,
+        *,
+        state_key: str,
+        label: str,
+        preset: str | None,
+        images: list[str] | None = None,
+        audio=None,
     ) -> Any:
         started = time.perf_counter()
+        state: dict[str, Any] = {state_key: text}
+        if images and self.vision_capable:
+            state["images"] = images
+        if audio is not None and self.audio_capable:
+            state["audio"] = audio
         try:
-            result = self.engine.predict({state_key: text}, questions)
+            result = self.engine.predict(state, questions)
         except Exception as e:
             logger.exception("Engine predict failed (%s, state_len=%d)", label, len(text))
             self._record(text, preset, None, started, e)
