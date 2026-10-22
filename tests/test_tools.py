@@ -41,8 +41,9 @@ from decision_mcp.tools.triage import TriageTool
 # ===========================================================================
 
 
-def test_registry_has_fifteen_tools() -> None:
-    assert len(TOOLS) == 15
+def test_registry_has_twenty_one_tools() -> None:
+    # 5 preset + 6 coding + 2 road + 4 video + 2 music + 2 admin
+    assert len(TOOLS) == 21
 
 
 def test_all_tool_names_unique() -> None:

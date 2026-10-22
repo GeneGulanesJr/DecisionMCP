@@ -67,7 +67,7 @@ def test_health(client: TestClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert body["tools"] == 15
+    assert body["tools"] == 21
 
 
 def test_streamable_initialize_and_list_tools(client: TestClient) -> None:
@@ -91,7 +91,7 @@ def test_streamable_initialize_and_list_tools(client: TestClient) -> None:
     )
     assert r.status_code == 200
     names = [t["name"] for t in r.json()["result"]["tools"]]
-    assert len(names) == 15
+    assert len(names) == 21
     assert "decision_guard" in names
     assert {"decision_road_report", "decision_advisory"} <= set(names)
 
