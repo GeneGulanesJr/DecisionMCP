@@ -6,6 +6,9 @@ extra installed, the models in ``./models`` (or the HF cache), and takes a
 few seconds to load them:
 
     DECISIONMCP_INTEGRATION=1 pytest tests/test_integration.py
+
+For the d1-omni-600M vision engine there is an equivalent module:
+``DECISIONMCP_INTEGRATION=1 pytest tests/test_integration_d1_omni_tf.py``.
 """
 from __future__ import annotations
 

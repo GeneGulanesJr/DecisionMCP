@@ -78,7 +78,8 @@ def _bridge(monkeypatch: pytest.MonkeyPatch, model: FakeD1Model) -> DecisionBrid
 
 
 def test_registry_lists_both_engines() -> None:
-    assert set(ENGINES) == {"laya", "d1", "d1-omni"}
+    # Subset: tests/conftest.py injects a "fake" engine for server tests.
+    assert {"laya", "d1", "d1-omni", "d1-omni-tf"} <= set(ENGINES)
 
 
 def test_build_engine_makes_a_d1(monkeypatch: pytest.MonkeyPatch) -> None:

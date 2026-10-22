@@ -1,9 +1,17 @@
 """Shared fixtures + a minimal engine double for tests."""
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from decision_mcp.engines.base import PresetSpec
+
+# Server tests import ``decision_mcp.server``, whose module level builds the
+# engine named by ``DECISIONMCP_ENGINE`` (default: laya). Point that at the
+# FakeEngine registered below so the mocked suite runs on machines without
+# any model stack installed. Must happen before any decision_mcp import.
+os.environ["DECISIONMCP_ENGINE"] = "fake"
 
 
 class FakeEngine:
@@ -52,6 +60,12 @@ class FakeEngine:
 @pytest.fixture
 def fake_engine():
     return FakeEngine()
+
+
+# Make the fake selectable via DECISIONMCP_ENGINE (see env default above).
+from decision_mcp.engines import ENGINES  # noqa: E402
+
+ENGINES[FakeEngine.name] = FakeEngine
 
 
 @pytest.fixture

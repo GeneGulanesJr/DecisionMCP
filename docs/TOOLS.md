@@ -476,6 +476,119 @@ class AdvisoryOutput(BaseModel):
 
 ---
 
+## Video tools (built for AutoVid)
+
+These three serve AutoVid's analysis pipeline, which needs thousands of cheap,
+bounded decisions while a cloud vision-language model does the expensive
+descriptive work. `decision_video_region` is text-only; `decision_video_boundary`
+and `decision_video_segment` are vision tools — they require an engine with
+`supports_images` (`d1-omni` or `d1-omni-tf`) and raise a `BridgeError`
+otherwise instead of guessing from text. All timestamps and interval math stay
+on the client; the tools turn probabilities into bounded actions.
+
+---
+
+## decision_video_region
+
+Decide the next bounded sampling action for one region of a video from a stats
+summary the client composes (duration, scene changes, motion, current interval,
+VLM uncertainty).
+
+**Input:**
+```python
+class VideoRegionInput(BaseModel):
+    summary: str             # region stats summary; only this reaches the model
+    current_interval_s: float  # code-only: densify target = half of this
+    min_interval_s: float = 0.5
+    max_interval_s: float = 30.0
+```
+
+**Output:**
+```python
+class VideoRegionOutput(BaseModel):
+    action: str                    # sufficient | densify | inspect_more | flag_review
+    suggested_interval_s: float | None  # set only for densify (halved, clamped)
+    has_content: float
+    ambiguity_level: int           # 0..3
+    ambiguity_text: str
+    confidence: float
+    details: dict
+```
+
+**Limitations:** uncalibrated probabilities — treat `action` as a work-queue
+hint. The model never sees timestamps; the client must encode everything the
+decision needs into `summary`.
+
+**Where the parser lives:** `decision_mcp/tools/video_region.py`
+
+---
+
+## decision_video_boundary
+
+Verify a candidate scene cut from up to 3 frames on each side of it.
+
+**Input:**
+```python
+class VideoBoundaryInput(BaseModel):
+    context: str        # candidate metadata text (timestamp, detector score)
+    before: list[str]   # 1-3 base64 JPEG frames just before the candidate
+    after: list[str]    # 1-3 base64 JPEG frames just after
+```
+
+**Output:**
+```python
+class VideoBoundaryOutput(BaseModel):
+    verdict: str          # boundary | shift | not_boundary
+    position_hint: str    # before | at | after (where the true cut sits)
+    cut_probability: float
+    confidence: float
+    details: dict
+```
+
+`boundary` requires different-scene AND P(cut) ≥ 0.5; same-scene below the
+cut-off is `not_boundary`; everything else (real difference the model cannot
+confirm, or hard-to-tell frames) is `shift` — re-check with a denser pair,
+moving toward `position_hint`.
+
+**Where the parser lives:** `decision_mcp/tools/video_boundary.py`
+
+---
+
+## decision_video_segment
+
+Accept or reject a candidate clip from 1-4 evidence frames plus a summary
+(activity, subjects, duration, motion, audio notes).
+
+**Input:**
+```python
+class VideoSegmentInput(BaseModel):
+    summary: str          # what the clip contains; only this text reaches the model
+    frames: list[str]     # 1-4 base64 JPEG evidence frames
+    duration_s: float | None    # code-only; never shown to the model
+    min_duration_s: float = 0.5
+```
+
+**Output:**
+```python
+class VideoSegmentOutput(BaseModel):
+    verdict: str          # accept | needs_evidence | reject | flag_review
+    is_highlight: float
+    self_contained: float
+    quality_level: int    # 0..3
+    quality_text: str
+    confidence: float
+    details: dict
+```
+
+Code-side tightening on top of the model's verdict: a confident complete
+highlight (`is_highlight` ≥ 0.7, `self_contained` ≥ 0.5) can be promoted from
+`needs_evidence` to `accept`; a clip shorter than `min_duration_s` can never be
+accepted outright; a highlight-verdict contradiction lands in `flag_review`.
+
+**Where the parser lives:** `decision_mcp/tools/video_segment.py`
+
+---
+
 ## Maintenance tools
 
 These two don't run the models.

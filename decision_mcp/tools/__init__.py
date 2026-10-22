@@ -16,6 +16,8 @@ from .diff_intent import DiffIntentTool
 from .email import EmailTool
 from .guard import GuardTool
 from .moderate import ModerateTool
+from .music_mood import MusicMoodTool
+from .music_sequence import MusicSequenceTool
 from .review_tone import ReviewToneTool
 from .road_report import RoadReportTool
 from .route import RouteTool
@@ -24,6 +26,10 @@ from .test_priority import TestPriorityTool
 from .triage import TriageTool
 from .update import UpdateTool
 from .usage_report import UsageTool
+from .video_boundary import VideoBoundaryTool
+from .video_continuity import VideoContinuityTool
+from .video_region import VideoRegionTool
+from .video_segment import VideoSegmentTool
 
 # Tools backed by engine presets (Laya upstream).
 _PRESET_TOOLS: list[Tool] = [
@@ -50,12 +56,33 @@ _ROAD_TOOLS: list[Tool] = [
     AdvisoryTool(),
 ]
 
+# Tools backed by custom question schemas (video analysis, built for AutoVid).
+# The vision tools require a supports_images engine (d1-omni / d1-omni-tf);
+# decision_video_region and decision_video_continuity also run text-only.
+_VIDEO_TOOLS: list[Tool] = [
+    VideoRegionTool(),
+    VideoContinuityTool(),
+    VideoBoundaryTool(),
+    VideoSegmentTool(),
+]
+
+# Tools backed by custom question schemas (music-driven editing, AutoVid).
+# decision_music_mood requires a supports_audio engine (d1-omni / d1-omni-tf);
+# decision_music_sequence is text-only.
+_MUSIC_TOOLS: list[Tool] = [
+    MusicSequenceTool(),
+    MusicMoodTool(),
+]
+
 # Maintenance tools (no model inference).
 _ADMIN_TOOLS: list[Tool] = [
     UpdateTool(),
     UsageTool(),
 ]
 
-TOOLS: list[Tool] = _PRESET_TOOLS + _CUSTOM_TOOLS + _ROAD_TOOLS + _ADMIN_TOOLS
+TOOLS: list[Tool] = (
+    _PRESET_TOOLS + _CUSTOM_TOOLS + _ROAD_TOOLS + _VIDEO_TOOLS + _MUSIC_TOOLS
+    + _ADMIN_TOOLS
+)
 
 __all__ = ["TOOLS", "Tool"]
